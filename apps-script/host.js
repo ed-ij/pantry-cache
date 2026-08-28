@@ -197,6 +197,16 @@ const DB = {
     return changed;
   },
 
+  /**
+   * Deletes contiguous runs rather than one row at a time. Taking forty bags
+   * out was forty sequential calls into the Sheets API, after forty rows had
+   * already been appended to History — and the rows being removed are usually
+   * neighbours, so in practice this collapses a batch to a handful of calls.
+   *
+   * Still not atomic: Apps Script has no transactions, and a failure partway
+   * leaves rows in both tabs. That is the safe direction (see removeWhole_),
+   * and `Set up / repair sheets` reports the duplicates.
+   */
   deleteByIds: function (name, ids) {
     if (!ids || !ids.length) return;
     const sh = sheet_(name);
@@ -210,8 +220,18 @@ const DB = {
     for (let i = 0; i < col.length; i++) {
       if (wanted[txt(col[i][0])]) targets.push(i + 2);
     }
-    // Delete bottom-up so earlier row numbers stay valid.
-    for (let i = targets.length - 1; i >= 0; i--) sh.deleteRow(targets[i]);
+    if (!targets.length) return;
+
+    // Bottom-up so earlier row numbers stay valid, in runs so there are fewer
+    // calls. targets is already ascending.
+    let end = targets.length - 1;
+    for (let i = targets.length - 1; i >= 0; i--) {
+      const startsRun = i === 0 || targets[i - 1] !== targets[i] - 1;
+      if (startsRun) {
+        sh.deleteRows(targets[i], end - i + 1);
+        end = i - 1;
+      }
+    }
     CACHE_ = {};
     HEADERS_ = {};
   },
@@ -331,6 +351,28 @@ function onOpen() {
 
 function setupSheets() {
   DB.ensure(true);
+
+  // A write interrupted between the two tables leaves a bag recorded twice.
+  // Nothing used to notice, so the totals were quietly wrong from then on.
+  const inInventory = {};
+  DB.getAll('Inventory').forEach(function (r) { inInventory[txt(r.ID)] = txt(r.Item); });
+  const both = DB.getAll('History')
+    .filter(function (r) { return inInventory[txt(r.ID)]; })
+    .map(function (r) { return txt(r.ID) + '  ' + txt(r.Item); });
+
+  if (both.length) {
+    SpreadsheetApp.getUi().alert(
+      'Some bags are recorded twice',
+      both.length + (both.length === 1 ? ' bag is' : ' bags are') +
+      ' listed in both Inventory and History, which happens if a take-out was ' +
+      'interrupted partway.\n\n' + both.slice(0, 20).join('\n') +
+      (both.length > 20 ? '\n…and ' + (both.length - 20) + ' more' : '') +
+      '\n\nDelete whichever row is wrong: the History row if the bag is still ' +
+      'in the freezer, the Inventory row if it has been used.',
+      SpreadsheetApp.getUi().ButtonSet.OK,
+    );
+  }
+
   showSetup();
 }
 

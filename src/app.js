@@ -1094,7 +1094,10 @@ function lotById(id) {
 function modalTake(m) {
   var l = lotById(m.id);
   if (!l) return '';
-  var splittable = l.count > 1 || (!l.count && l.weightG > 100);
+  // A count of 1 with a unit — "1 litre" of stock, "1 box" of faggots — used
+  // to satisfy neither branch, so a whole class of Prepared food offered no
+  // partial take-out at all. Those are exactly the things you take half of.
+  var splittable = l.count > 1 || l.weightG > 100 || (l.count === 1 && !l.weightG);
   return wrap(
     '<h2 class="modal-title">' + esc(l.item) + '</h2>' +
     '<p class="muted" style="margin-top:0">' + esc(lotSize(l)) + ' in the ' + esc(l.freezer) + ' freezer' +
@@ -1106,6 +1109,10 @@ function modalTake(m) {
       (splittable
         ? '<button class="btn btn-block" data-act="open-part" data-id="' + esc(l.id) + '">' +
           (l.count > 1 ? 'Take only some of them' : 'Take only part of it') + '</button>'
+        : '') +
+      (l.count === 1 && !l.weightG
+        ? '<div class="muted small" style="margin-top:-4px">Taking part of it needs a weight ' +
+          '&mdash; add one under &ldquo;Change this bag&rdquo;.</div>'
         : '') +
       '<button class="btn btn-block" data-act="open-edit" data-id="' + esc(l.id) + '">Change this bag&hellip;</button>' +
       '<button class="btn btn-ghost btn-block" data-act="close-modal">Cancel</button>' +
@@ -1528,6 +1535,7 @@ var ACTIONS = {
   'ask-take': function (d) { setState({ modal: { kind: 'take', id: d.id } }); },
   'open-part': function (d) {
     var l = lotById(d.id);
+    if (l.count === 1 && !l.weightG) return ACTIONS['open-edit'](d);
     var value = l.count > 0
       ? Math.max(1, Math.floor(l.count / 2))
       : Math.round(Math.min(250, Math.max(50, l.weightG / 2)));

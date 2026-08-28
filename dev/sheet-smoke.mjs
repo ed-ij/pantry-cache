@@ -19,6 +19,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /* ------------------------------------------------------- the fake grid */
 
+const calls = { deleteRow: 0, deleteRows: 0 };
+
 function makeSheet(name, grid) {
   const cells = grid.map((r) => r.slice());
 
@@ -45,7 +47,8 @@ function makeSheet(name, grid) {
     getMaxRows: () => Math.max(cells.length, 1),
     setFrozenRows: () => sheet,
     autoResizeColumns: () => sheet,
-    deleteRow: (r) => { cells.splice(r - 1, 1); },
+    deleteRow: (r) => { calls.deleteRow++; cells.splice(r - 1, 1); },
+    deleteRows: (r, n) => { calls.deleteRows++; cells.splice(r - 1, n); },
     /** The one method that matters: a rectangular window onto the grid. */
     getRange(row, col, numRows = 1, numCols = 1) {
       return {
@@ -257,6 +260,29 @@ const INV = ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note
   const fz = B.apiGetState().freezers;
   assert.ok(/^#[0-9a-f]{6}$/i.test(fz[0].colour), 'an invalid colour falls back to the palette');
   assert.equal(fz[1].colour, '#B53464', 'a valid one is kept');
+}
+
+/* ============================ 7. deletes go out in runs ================ */
+{
+  const rows = [INV];
+  for (let i = 1; i <= 40; i++) {
+    rows.push(['L' + i, 'Peas', 'Vegetables', 'Kitchen', 100, '2026-07-01', '', '', '', '']);
+  }
+  const ss = makeSpreadsheet({
+    Inventory: rows, History: [], Items: [],
+    Freezers: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '#5F8A20']],
+  });
+  const B = load(ss);
+  calls.deleteRow = 0;
+  calls.deleteRows = 0;
+
+  // 40 contiguous bags — the shape a multi-select take-out produces.
+  B.apiRemove({ ids: rows.slice(1).map((r) => r[0]), dateOut: '2026-08-01' });
+
+  assert.equal(B.DB.getAll('Inventory').length, 0, 'all forty are gone');
+  assert.equal(B.DB.getAll('History').length, 40, 'and all forty are in History');
+  assert.equal(calls.deleteRow, 0, 'no one-at-a-time deletes');
+  assert.ok(calls.deleteRows <= 2, `40 contiguous rows in <=2 calls, got ${calls.deleteRows}`);
 }
 
 console.log('All sheet-layout checks passed.');

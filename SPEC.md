@@ -41,7 +41,7 @@ individually.
 
 | Tab | Columns |
 | --- | --- |
-| `Inventory` | `ID`, `Item`, `Category`, `Freezer`, `Weight (g)`, `Date In`, `Note`, `Count`, `Unit` |
+| `Inventory` | `ID`, `Item`, `Category`, `Freezer`, `Weight (g)`, `Date In`, `Note`, `Count`, `Unit`, `Month only` |
 | `History` | the same, plus `Date Out` |
 | `Items` | `Item`, `Category`, `Typical weight (g)`, `Typical count`, `Unit` |
 | `Freezers` | `Name`, `Where`, `Colour` |
@@ -57,9 +57,14 @@ the record of what the garden produced accumulates on its own.
 `apiGetState`, `apiAdd`, `apiRemove`, `apiRemovePart`, `apiEditLot`,
 `apiSplitLot`, `apiRenameItem`, `apiRenameCategory`, `apiUndo`.
 
-Every mutating call returns an **undo token**, and every one of them is
-reversible: adds delete, removals move back, edits restore prior values, splits
-reassemble, renames rename back.
+Every mutating call returns an **undo handle** — an opaque string. The token
+itself stays on the server, is accepted once, and expires, so a handle cannot be
+forged into authority to delete rows. Each carries a fingerprint of the rows it
+affects: if they have changed since, the undo refuses in English rather than
+doing something surprising. Within that window every action is reversible: adds
+delete (and take back the catalogue row they created), removals move back, edits
+restore prior values, splits reassemble, renames rename back exactly the rows
+they touched.
 
 ---
 
@@ -89,8 +94,10 @@ bottom navigation, three tabs and no nesting. Every stepper button states its ow
 size (`−50`, `−10`) because an unlabelled `+` is a guess.
 
 **5. Month and year are what matter; the day is a bonus.** Views lead with
-"Jul 2025" and "1 year 1 mth ago". Exact dates are stored where known, for later
-analysis, but never made to feel important.
+"Jul 2025" and "1 year 1 month ago". Exact dates are stored where known, for
+later analysis, but never made to feel important. Where the day is *not* known —
+backdating picks a month — the `Month only` column records that, and the screen
+says "Jul 2025" rather than inventing a 1st and showing it like a chosen day.
 
 **6. Weights are stored exactly as entered, in grams.** A 10 g grid was tried and
 removed: once a keypad exists, rounding is the user's business, not the app's.
@@ -104,8 +111,11 @@ listed separately.
 one. Colours are picked for the light theme and lightened automatically for
 dark, so one value cannot be wrong on one of them.
 
-**9. New columns are appended, never inserted.** A sheet already holding data
-must keep every value under the right header when the layout is refreshed.
+**9. Columns are read by name, and new ones are appended.** Row 1 is the
+contract: every read and write looks up its column by header text, so she can
+reorder columns or add her own without shifting anything. Refreshing the layout
+appends what is missing and never rewrites what is there — a sheet that does not
+match is reported, not "repaired".
 
 **10. No dependencies, no framework, no build step beyond concatenation.** Apps
 Script has no module system, and this has to remain repairable by hand years
@@ -130,16 +140,26 @@ used with this app.* Test the walk before relying on it.
 **Latency.** Each action is a round trip to Google, typically one to two
 seconds. Deliberately not hidden behind optimistic updates (constraint 2).
 
-**One person at a time.** Writes are serialised with a script lock, so the sheet
-cannot be corrupted, but there is no live refresh: two people using it at once
-can act on a stale view. Fine for a household, wrong for a shop.
+**One person at a time.** Writes are serialised with a script lock, so two
+people cannot interleave a change. That is weaker than it sounds: a lock orders
+writers, it does not make a write that touches two tabs all-or-nothing. A
+take-out interrupted partway can still leave a bag recorded in both `Inventory`
+and `History` — the safe direction, since the additive write always goes first,
+and *Set up / repair sheets* finds and reports it. There is also no live
+refresh, so two people using it at once can act on a stale view; the app says so
+and reloads rather than doing something surprising. Fine for a household, wrong
+for a shop.
 
 **The link is a key.** Deployed with *Anyone* access, whoever holds the URL can
 read and change the log without signing in. That is what makes it painless on a
 tablet. The alternative — *Anyone with a Google account* — costs one sign-in.
 
-**Copies are frozen.** Updates do not propagate to spreadsheets already copied.
-This is the price of independence (constraint 11) and is usually the right trade.
+**Copies update by pulling, never by being pushed to.** Nothing propagates on
+its own — that is constraint 11 doing its job, and a bad release cannot reach
+anyone's freezer list. *Freezer Log → Check for updates* asks a small file on
+GitHub what the current build is, compares it against the one stamped into this
+copy, and hands over the files to paste. Every copy can say what it is running;
+none of them changes without being told to.
 
 **Freezers cannot be renamed from the app.** Items and categories can. Renaming a
 freezer means editing the `Freezers` tab *and* find-and-replacing the `Freezer`
@@ -154,6 +174,14 @@ is near.
 recipes, shopping lists, nutrition, multiple households, user accounts. Each
 would earn its place only by making the three questions above harder to answer.
 
-**Small things.** Backdating to a month sets the day to the 1st. Dark-theme
-freezer colours need `color-mix`, and degrade to the stored colour without it.
-`.freezer-bar` is unused CSS left from the removed by-freezer view.
+**Small things.** Backdating to a month stores the 1st and flags the row
+`Month only`, so the day is never shown as though it were chosen. Dark-theme
+freezer colours need `color-mix`, and degrade to the stored colour without it;
+the top and bottom bars declare a plain colour first so they stay opaque
+without it.
+
+**Cells that cannot be read.** The sheet is hand-editable on purpose, so a
+weight or date can be typed in a form the app cannot honestly read. `kg`, `oz`
+and `lb` are understood and converted; anything left is refused rather than
+guessed, and named on screen with the row and the text it found. Nothing silently
+becomes `0`.
