@@ -39,10 +39,27 @@ try {
   // Building outside a checkout is fine; the stamp just says so.
 }
 
+/**
+ * A build checks for updates on the branch it was built from. Households only
+ * ever receive builds cut from `main`, so they follow `main`; a build made on
+ * `dev` and pasted into your own test copy follows `dev`, which is the only way
+ * to exercise the update dialog before a release.
+ */
+const BRANCH = (() => {
+  try {
+    return execSync('git rev-parse --abbrev-ref HEAD', { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim() || 'main';
+  } catch {
+    return 'main';
+  }
+})();
+
 const stamp = `/** Stamped by build.mjs. Shown in the setup dialog and compared against latest.json. */
 const BUILD = '${BUILD}';
 const BUILD_COMMIT = '${COMMIT}';
-const RELEASE_BASE = 'https://raw.githubusercontent.com/ed-ij/pantry-cache/main/';
+const BUILD_BRANCH = '${BRANCH}';
+const RELEASE_BASE = 'https://raw.githubusercontent.com/ed-ij/pantry-cache/${BRANCH}/';
 `;
 
 await rm(DIST, { recursive: true, force: true });
@@ -97,5 +114,5 @@ await writeFile(join(DIST, 'appsscript.json'), JSON.stringify({
   },
 }, null, 2) + '\n');
 
-console.log(`Built dist/ at ${BUILD} (${COMMIT})`);
+console.log(`Built dist/ at ${BUILD} (${COMMIT} on ${BRANCH})`);
 console.log('  Code.gs, Index.html, Css.html, Js.html, Setup.html, Update.html, appsscript.json');

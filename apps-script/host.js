@@ -445,7 +445,10 @@ function fetchText_(path) {
 
 /** Called by the dialog. Returns what this copy is running and what is current. */
 function apiUpdateStatus() {
-  const out = { build: BUILD, commit: BUILD_COMMIT, latest: '', notes: '', newer: false };
+  const out = {
+    build: BUILD, commit: BUILD_COMMIT, branch: BUILD_BRANCH,
+    latest: '', notes: '', newer: false,
+  };
   let manifest;
   try {
     manifest = JSON.parse(fetchText_('latest.json'));

@@ -152,7 +152,14 @@
         '<div><dt>This copy</dt><dd>' + esc(when(st.build)) + '</dd></div>' +
         '<div><dt>Newest</dt><dd>' + esc(when(st.latest)) + '</dd></div>' +
         '<div><dt>Version</dt><dd>' + esc(st.commit || '—') + '</dd></div>' +
-      '</div>';
+        (st.branch && st.branch !== 'main'
+          ? '<div><dt>Branch</dt><dd>' + esc(st.branch) + '</dd></div>'
+          : '') +
+      '</div>' +
+      (st.branch && st.branch !== 'main'
+        ? '<div class="note note-warn">This copy is following <strong>' + esc(st.branch) +
+          '</strong>, not the released version. That is a test build.</div>'
+        : '');
 
     if (!st.newer) {
       root.innerHTML =

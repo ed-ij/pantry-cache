@@ -1,9 +1,10 @@
 /// Built by build.mjs from apps-script/host.js + src/backend.js — do not edit here.
 
 /** Stamped by build.mjs. Shown in the setup dialog and compared against latest.json. */
-const BUILD = '2026-08-28T22:23:28Z';
-const BUILD_COMMIT = '79614df';
-const RELEASE_BASE = 'https://raw.githubusercontent.com/ed-ij/pantry-cache/main/';
+const BUILD = '2026-08-28T22:34:44Z';
+const BUILD_COMMIT = 'ac980a3';
+const BUILD_BRANCH = 'dev';
+const RELEASE_BASE = 'https://raw.githubusercontent.com/ed-ij/pantry-cache/dev/';
 
 /**
  * Freezer Log — Google Apps Script host.
@@ -452,7 +453,10 @@ function fetchText_(path) {
 
 /** Called by the dialog. Returns what this copy is running and what is current. */
 function apiUpdateStatus() {
-  const out = { build: BUILD, commit: BUILD_COMMIT, latest: '', notes: '', newer: false };
+  const out = {
+    build: BUILD, commit: BUILD_COMMIT, branch: BUILD_BRANCH,
+    latest: '', notes: '', newer: false,
+  };
   let manifest;
   try {
     manifest = JSON.parse(fetchText_('latest.json'));
