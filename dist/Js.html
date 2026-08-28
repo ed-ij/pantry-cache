@@ -311,20 +311,24 @@ var S = {
 
   openCats: {},
 
-  viewMode: 'item',
-  viewFreezer: 'all',
-  viewSearch: '',
+  // One filter and one search across both tabs. They used to be four separate
+  // pieces of state, so filtering to the Shed in "In the freezers" and then
+  // tapping "Take out" silently put you back to all freezers.
+  freezer: 'all',
+  search: '',
   viewLimit: 60,
   open: {},
 
-  takeFreezer: 'all',
-  takeSearch: '',
   takeLimit: 40,
+  // Taking several bags out for one meal is the third question the spec asks,
+  // and the backend has always accepted a list.
+  selected: {},
 
   modal: null,
   toast: null,
   busy: false,
   loadFailed: false,
+  slowLoad: false,
   offline: navigator.onLine === false,
 };
 
@@ -485,8 +489,17 @@ function modalIsDirty() {
   return false;
 }
 
+/**
+ * Constraint 3 asks for English rather than codes; the loading state deserves
+ * the same. An Apps Script cold start regularly runs past the "one to two
+ * seconds" the spec quotes, and three shimmering grey rectangles with no words
+ * read as broken.
+ */
 function renderLoading() {
   return '<div class="stack">' +
+    '<div class="muted" style="text-align:center;padding:8px 0 4px">' +
+      esc(S.slowLoad ? 'Still reading the spreadsheet\u2026 this is taking longer than usual.' : 'Reading the spreadsheet\u2026') +
+    '</div>' +
     '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>' +
     '</div>';
 }
@@ -718,11 +731,11 @@ function renderAddDetails() {
               hint: d.weightConfirmed ? '' : 'a guess — set it',
             })
           : '<div class="not-set">Not weighed <button class="btn btn-ghost" data-act="set-weight" data-g="500">Add a weight</button></div>') +
-        '<div class="chips" style="margin-top:10px">' + weightChips +
-          (d.weightG > 0 && d.count > 0
-            ? '<button class="chip" data-act="set-weight" data-g="0">Don&rsquo;t weigh it</button>'
-            : '') +
-        '</div>' +
+        '<div class="chips" style="margin-top:10px">' + weightChips + '</div>' +
+        (d.weightG > 0 && d.showCount && d.count > 0
+          ? '<button class="btn btn-ghost btn-compact" style="padding-left:0;margin-top:6px" ' +
+            'data-act="set-weight" data-g="0">Don&rsquo;t weigh it &mdash; count only</button>'
+          : '') +
       '</div>' +
 
       '<div>' + (d.showCount
@@ -735,8 +748,14 @@ function renderAddDetails() {
             unitChoices(d.unit).map(function (u) {
               return '<button class="chip' + (norm(d.unit) === norm(u) ? ' is-on' : '') + '" data-act="set-unit" data-unit="' + esc(u) + '">' + esc(u) + '</button>';
             }).join('') +
-            '<button class="chip" data-act="type-unit">Something else&hellip;</button>' +
-            '<button class="chip" data-act="hide-count">Don&rsquo;t count them</button>' +
+          '</div>' +
+          // A word to choose, a dialog to open and a field to delete were three
+          // different kinds of thing wearing identical pills.
+          '<div class="row" style="margin-top:6px;gap:4px">' +
+            '<button class="btn btn-ghost btn-compact" style="padding-left:0" data-act="type-unit">' +
+              'Another word&hellip;</button>' +
+            '<button class="btn btn-ghost btn-compact" data-act="hide-count">' +
+              'Don&rsquo;t count them</button>' +
           '</div>'
         : '<button class="btn btn-ghost" style="padding-left:0" data-act="show-count">' +
           '&#43; Count the pieces (cobs, portions&hellip;)</button>') +
@@ -861,26 +880,11 @@ function renderRecentAdds() {
 /* ----------------------------------------------------------------- VIEW */
 
 function renderView() {
-  var inv = S.inventory;
-  if (S.viewFreezer !== 'all') inv = inv.filter(function (l) { return l.freezer === S.viewFreezer; });
-  var q = norm(S.viewSearch);
-  if (q) inv = inv.filter(function (l) { return norm(l.item).indexOf(q) > -1 || norm(l.category).indexOf(q) > -1; });
+  var inv = filtered();
+  var q = norm(S.search);
 
   var kinds = {};
   inv.forEach(function (l) { kinds[norm(l.item)] = 1; });
-
-  // The freezer filter doubles as the per-freezer overview: each chip carries
-  // its own total, so choosing where to look and seeing what is where are the
-  // same glance.
-  var allTotal = sum(S.inventory, function (l) { return l.weightG; });
-  var chips = '<button class="chip' + (S.viewFreezer === 'all' ? ' is-on' : '') + '" data-act="view-freezer" data-name="all">' +
-    'All freezers <span class="chip-num">' + esc(fmtW(allTotal)) + '</span></button>' +
-    S.freezers.map(function (f) {
-      var t = sum(S.inventory.filter(function (l) { return l.freezer === f.name; }), function (l) { return l.weightG; });
-      return '<button class="chip' + (S.viewFreezer === f.name ? ' is-on' : '') + '" data-act="view-freezer" data-name="' + esc(f.name) + '">' +
-        dot(f.colour) + esc(f.name) +
-        ' <span class="chip-num">' + esc(fmtW(t)) + '</span></button>';
-    }).join('');
 
   var head = '<div class="stack">' +
     renderProblems() +
@@ -889,22 +893,53 @@ function renderView() {
       stat(String(inv.length), inv.length === 1 ? 'Bag / tub' : 'Bags / tubs') +
       stat(String(Object.keys(kinds).length), 'Different things') +
     '</div>' +
-    '<div class="seg">' +
-      '<button class="seg-btn' + (S.viewMode === 'item' ? ' is-on' : '') + '" data-act="view-mode" data-mode="item">By item</button>' +
-      '<button class="seg-btn' + (S.viewMode === 'age' ? ' is-on' : '') + '" data-act="view-mode" data-mode="age">By age</button>' +
-    '</div>' +
-    '<div class="chips">' + chips + '</div>' +
-    '<input class="input" id="view-search" type="search" placeholder="Search for something&hellip;" value="' + esc(S.viewSearch) + '" data-act="view-search">';
+    freezerFilter('') +
+    searchBox('Search the freezers\u2026');
 
   var body = inv.length
-    ? (S.viewMode === 'age' ? renderByAge(inv) : renderByItem(inv))
+    ? renderByItem(inv)
     : '<div class="empty"><span class="empty-mark">&#10052;</span>' +
-      (q || S.viewFreezer !== 'all'
+      (q || S.freezer !== 'all'
         ? 'Nothing here matches.'
         : 'The freezers are empty. Add something on the <b>Put in</b> tab.') +
       '</div>';
 
   return head + body + renderRecentTakes() + renderSheetLink() + '</div>';
+}
+
+/** The freezer filter, shared by both tabs, with each chip carrying its total. */
+function freezerFilter(warm) {
+  var on = warm ? ' is-on-warm' : ' is-on';
+  var allTotal = sum(S.inventory, function (l) { return l.weightG; });
+  return '<div class="chips">' +
+    '<button class="chip' + (S.freezer === 'all' ? on : '') + '" data-act="set-freezer-filter" data-name="all">' +
+      'All freezers <span class="chip-num">' + esc(fmtW(allTotal)) + '</span></button>' +
+    S.freezers.map(function (f) {
+      var t = sum(S.inventory.filter(function (l) { return l.freezer === f.name; }), function (l) { return l.weightG; });
+      return '<button class="chip' + (S.freezer === f.name ? on : '') + '" data-act="set-freezer-filter" data-name="' + esc(f.name) + '">' +
+        dot(f.colour) + esc(f.name) +
+        ' <span class="chip-num">' + esc(fmtW(t)) + '</span></button>';
+    }).join('') +
+    '</div>';
+}
+
+function searchBox(placeholder) {
+  return '<label class="sr-only" for="search">' + esc(placeholder) + '</label>' +
+    '<input class="input" id="search" type="search" placeholder="' + esc(placeholder) + '" ' +
+    'aria-label="' + esc(placeholder) + '" value="' + esc(S.search) + '" data-act="set-search">';
+}
+
+/** The inventory as both tabs see it: one freezer filter, one search. */
+function filtered() {
+  var inv = S.inventory;
+  if (S.freezer !== 'all') inv = inv.filter(function (l) { return l.freezer === S.freezer; });
+  var q = norm(S.search);
+  if (q) {
+    inv = inv.filter(function (l) {
+      return norm(l.item).indexOf(q) > -1 || norm(l.category).indexOf(q) > -1;
+    });
+  }
+  return inv;
 }
 
 /**
@@ -971,54 +1006,15 @@ function totalStat(lots) {
   return stat(totals[0], weighed ? 'Total weight' : 'Total', sub);
 }
 
-/**
- * Oldest first, grouped by the month it went in — the month and year are what
- * actually matter, and the grouping makes "what has been in there longest"
- * readable at a glance rather than something you have to work out.
- */
-function renderByAge(inv) {
-  var sorted = inv.slice().sort(byAge);
-  var shown = sorted.slice(0, S.viewLimit);
-  var oneFreezer = S.viewFreezer !== 'all';
-
-  var html = '';
-  var lastMonth = null;
-  shown.forEach(function (l) {
-    var month = (l.dateIn || '').slice(0, 7);
-    if (month !== lastMonth) {
-      lastMonth = month;
-      html += '<div class="group-head">' +
-        (l.dateIn ? esc(fmtMonth(l.dateIn)) + ' <span class="group-meta">' + esc(ageText(l.dateIn)) + '</span>'
-                  : 'No date recorded <span class="group-meta">fix these in the spreadsheet</span>') +
-        '</div>';
-    }
-    html += '<button class="row-btn" data-act="ask-take" data-id="' + esc(l.id) + '">' +
-      '<span class="row-main"><span class="row-name">' + esc(l.item) + '</span>' +
-      '<span class="row-meta">' +
-      (oneFreezer ? '' : freezerBadge(l.freezer) + ' ') +
-      esc(fmtWhen(l)) + (l.note ? ' &middot; ' + esc(l.note) : '') + '</span></span>' +
-      '<span class="row-right"><span class="row-strong">' + esc(lotSize(l)) + '</span></span>' +
-      '<span class="row-chevron">&rsaquo;</span></button>';
-  });
-
-  var more = sorted.length > shown.length
-    ? '<button class="btn btn-block" data-act="view-more" style="margin-top:12px">Show more (' + (sorted.length - shown.length) + ' left)</button>'
-    : '';
-
-  return '<div class="card card-flush">' +
-    '<div class="card-head"><div class="card-title">Oldest first</div><div class="spacer"></div>' +
-    '<div class="card-sub">tap a bag to take it out</div></div>' + html + '</div>' + more;
-}
-
 function renderByItem(inv) {
-  var oneFreezer = S.viewFreezer !== 'all';
+  var oneFreezer = S.freezer !== 'all';
   var byCat = groupBy(inv, function (l) { return l.category; });
 
   var sections = Object.keys(byCat).sort().map(function (cat) {
     var lots = byCat[cat];
     var byItem = groupBy(lots, function (l) { return l.item; });
     var rows = Object.keys(byItem).sort().map(function (item) {
-      return itemRow(byItem[item], 'i:' + cat + ':' + item, oneFreezer ? S.viewFreezer : null);
+      return itemRow(byItem[item], 'i:' + cat + ':' + item, oneFreezer ? S.freezer : null);
     }).join('');
     // One figure only. A section header listing every unit gets long, and
     // "1 bag" as a unit reads confusingly next to "24 bags" as the tally, so
@@ -1085,33 +1081,60 @@ function itemRow(lots, key, freezerContext) {
 
 /* ----------------------------------------------------------------- TAKE */
 
+/**
+ * Oldest first, grouped by month, with the bags you are taking selectable.
+ *
+ * This screen used to exist twice: "In the freezers → By age" rendered nearly
+ * the same list, sorted the same way, and opened the same removal dialog, with
+ * different chrome and its own filter state. The month headings came from
+ * there; the "use first" badges from here.
+ *
+ * And it took one bag at a time. apiRemove has always accepted a list, but the
+ * interface only ever sent one — so a meal was four modals and four round
+ * trips, each toast replacing the last one's undo. The spec's third question is
+ * "I am cooking. Remove what I have used", which is a plural sentence.
+ */
 function renderTake() {
-  var lots = S.inventory.slice();
-  if (S.takeFreezer !== 'all') lots = lots.filter(function (l) { return l.freezer === S.takeFreezer; });
-  var q = norm(S.takeSearch);
-  if (q) lots = lots.filter(function (l) { return norm(l.item).indexOf(q) > -1 || norm(l.category).indexOf(q) > -1; });
-  lots.sort(byAge);
+  var lots = filtered().slice().sort(byAge);
+  var shown = lots.slice(0, S.takeLimit);
+  var picked = Object.keys(S.selected);
 
   var oldestSeen = {};
-  var shown = lots.slice(0, S.takeLimit);
-
-  var freezerChips = '<button class="chip' + (S.takeFreezer === 'all' ? ' is-on-warm' : '') + '" data-act="take-freezer" data-name="all">All freezers</button>' +
-    S.freezers.map(function (f) {
-      return '<button class="chip' + (S.takeFreezer === f.name ? ' is-on-warm' : '') + '" data-act="take-freezer" data-name="' + esc(f.name) + '">' +
-        dot(f.colour) + esc(f.name) + '</button>';
-    }).join('');
-
+  var lastMonth = null;
   var rows = shown.map(function (l) {
     var first = l.dateIn && !oldestSeen[norm(l.item)];
     if (l.dateIn) oldestSeen[norm(l.item)] = 1;
-    return '<button class="row-btn" data-act="ask-take" data-id="' + esc(l.id) + '">' +
-      '<span class="row-main"><span class="row-name">' + esc(l.item) +
-        (first ? ' <span class="badge badge-warm">use first</span>' : '') + '</span>' +
-      '<span class="row-meta">' + freezerBadge(l.freezer) + ' ' +
-      (l.dateIn ? 'frozen ' + esc(fmtWhen(l)) + ' &middot; ' + esc(ageText(l.dateIn)) : 'date not recorded') +
-      (l.note ? ' &middot; ' + esc(l.note) : '') + '</span></span>' +
-      '<span class="row-right"><span class="row-strong">' + esc(lotSize(l)) + '</span></span>' +
-      '<span class="row-chevron">&rsaquo;</span></button>';
+
+    var month = l.dateIn ? l.dateIn.slice(0, 7) : 'none';
+    var headHtml = '';
+    if (month !== lastMonth) {
+      lastMonth = month;
+      headHtml = '<div class="group-head">' +
+        (l.dateIn
+          ? esc(fmtMonth(l.dateIn)) + ' <span class="group-meta">' + esc(ageText(l.dateIn)) + '</span>'
+          : 'No date recorded <span class="group-meta">fix these in the spreadsheet</span>') +
+        '</div>';
+    }
+
+    var on = !!S.selected[l.id];
+    return headHtml +
+      '<div class="pick-row' + (on ? ' is-picked' : '') + '">' +
+        '<button class="pick" data-act="toggle-pick" data-id="' + esc(l.id) + '" ' +
+          'role="checkbox" aria-checked="' + on + '" ' +
+          'aria-label="' + esc(l.item + ', ' + lotSize(l) + ', ' + l.freezer + ' freezer') + '">' +
+          '<span class="pick-box" aria-hidden="true">' + (on ? '&#10003;' : '') + '</span>' +
+          '<span class="row-main">' +
+            '<span class="row-name">' + esc(l.item) +
+              (first ? ' <span class="badge badge-warm">use first</span>' : '') + '</span>' +
+            '<span class="row-meta">' + freezerBadge(l.freezer) + ' ' +
+            (l.dateIn ? 'frozen ' + esc(fmtWhen(l)) + ' &middot; ' + esc(ageText(l.dateIn)) : 'date not recorded') +
+            (l.note ? ' &middot; ' + esc(l.note) : '') + '</span>' +
+          '</span>' +
+          '<span class="row-right"><span class="row-strong">' + esc(lotSize(l)) + '</span></span>' +
+        '</button>' +
+        '<button class="row-more" data-act="ask-take" data-id="' + esc(l.id) + '" ' +
+          'aria-label="More about this bag">&rsaquo;</button>' +
+      '</div>';
   }).join('');
 
   var more = lots.length > shown.length
@@ -1123,13 +1146,33 @@ function renderTake() {
       '<div class="card-head"><div class="card-title">Oldest first</div><div class="spacer"></div>' +
       '<div class="card-sub">tap what you are taking out</div></div>' + rows + '</div>' + more
     : '<div class="empty"><span class="empty-mark">&#128230;</span>' +
-      (S.inventory.length ? 'Nothing here matches those filters.' : 'The freezers are empty.') + '</div>';
+      (S.inventory.length ? 'Nothing here matches.' : 'The freezers are empty.') + '</div>';
 
   return '<div class="stack">' +
-    '<div class="chips">' + freezerChips + '</div>' +
-    '<input class="input" id="take-search" type="search" placeholder="Search for something&hellip;" value="' + esc(S.takeSearch) + '" data-act="take-search">' +
+    freezerFilter('warm') +
+    searchBox('Search the freezers\u2026') +
     body +
     renderRecentTakes() +
+    '</div>' +
+    renderPickBar(picked);
+}
+
+/** The running tally, and the one call that takes them all out together. */
+function renderPickBar(picked) {
+  if (!picked.length) return '';
+  var lots = picked.map(lotById).filter(Boolean);
+  if (!lots.length) return '';
+  var totals = lotsSize(lots, true);
+  return '<div class="pickbar">' +
+    '<div class="pickbar-inner">' +
+      '<button class="btn btn-ghost btn-compact" data-act="clear-picks">Clear</button>' +
+      '<div class="spacer">' +
+        '<div style="font-weight:700">' + lots.length + (lots.length === 1 ? ' bag' : ' bags') + ' chosen</div>' +
+        '<div class="small muted">' + esc(totals.join(' \u00b7 ')) + '</div>' +
+      '</div>' +
+      '<button class="btn btn-warm" data-act="do-take-picked"' + (S.busy ? ' disabled' : '') + '>' +
+        (S.busy ? 'Taking out&hellip;' : 'Take ' + (lots.length === 1 ? 'it' : 'them') + ' out') + '</button>' +
+    '</div>' +
     '</div>';
 }
 
@@ -1276,7 +1319,7 @@ function modalDate(m) {
     var x = new Date(d.getFullYear(), d.getMonth() - i, 1);
     var iso = x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-01';
     months.push('<button class="chip' + (m.value === iso && m.monthOnly ? ' is-on' : '') + '" ' +
-      'data-act="set-date" data-date="' + iso + '" data-month-only="1">' +
+      'data-act="pick-date" data-date="' + iso + '" data-month-only="1">' +
       x.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) + '</button>');
   }
   var yest = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1);
@@ -1287,9 +1330,9 @@ function modalDate(m) {
     '<p class="muted" style="margin-top:0">The month is what matters most &mdash; pick the exact day if you know it.</p>' +
     '<div class="chips">' +
       '<button class="chip' + (m.value === S.today && !m.monthOnly ? ' is-on' : '') +
-        '" data-act="set-date" data-date="' + S.today + '">Today</button>' +
+        '" data-act="pick-date" data-date="' + S.today + '">Today</button>' +
       '<button class="chip' + (m.value === yestISO && !m.monthOnly ? ' is-on' : '') +
-        '" data-act="set-date" data-date="' + yestISO + '">Yesterday</button>' +
+        '" data-act="pick-date" data-date="' + yestISO + '">Yesterday</button>' +
     '</div>' +
     '<div class="section-title" style="margin:18px 0 8px">Earlier months</div>' +
     '<div class="chips">' + months.join('') + '</div>' +
@@ -1297,7 +1340,8 @@ function modalDate(m) {
     '<input class="input" id="date-input" type="date" max="' + S.today + '" value="' + esc(m.value) + '" data-act="date-input"></div>' +
     '<div class="row" style="margin-top:20px">' +
       '<button class="btn btn-ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
-      '<button class="btn btn-primary" data-act="set-date" data-date="' + esc(m.value) + '">Use ' +
+      '<button class="btn btn-primary" data-act="set-date" data-date="' + esc(m.value) + '" ' +
+        'data-month-only="' + (m.monthOnly ? '1' : '') + '">Use ' +
         esc(fmtWhen({ dateIn: m.value, monthOnly: m.monthOnly })) + '</button>' +
     '</div>'
   );
@@ -1340,6 +1384,10 @@ function modalTake(m) {
     '<div class="stack" style="margin-top:18px">' +
       '<button class="btn btn-warm btn-hero btn-block" data-act="do-take" data-id="' + esc(l.id) + '">' +
         'Take all ' + esc(lotSize(l)) + ' out</button>' +
+      // "Change this bag" used to be the only route to editing, which meant
+      // correcting a wrong date started by acting as though you were removing
+      // the bag. It is a peer of taking out, not a footnote to it.
+      ''  +
       (splittable
         ? '<button class="btn btn-block" data-act="open-part" data-id="' + esc(l.id) + '">' +
           (l.count > 1 ? 'Take only some of them' : 'Take only part of it') + '</button>'
@@ -1348,7 +1396,10 @@ function modalTake(m) {
         ? '<div class="muted small" style="margin-top:-4px">Taking part of it needs a weight ' +
           '&mdash; add one under &ldquo;Change this bag&rdquo;.</div>'
         : '') +
-      '<button class="btn btn-block" data-act="open-edit" data-id="' + esc(l.id) + '">Change this bag&hellip;</button>' +
+      '<div class="row" style="gap:8px">' +
+        '<button class="btn" style="flex:1" data-act="open-edit" data-id="' + esc(l.id) + '">&#9998; Change</button>' +
+        '<button class="btn" style="flex:1" data-act="open-split" data-id="' + esc(l.id) + '">Split&hellip;</button>' +
+      '</div>' +
       '<button class="btn btn-ghost btn-block" data-act="close-modal">Cancel</button>' +
     '</div>'
   );
@@ -1489,7 +1540,8 @@ function modalSplit(m) {
     }) +
     '<p class="muted small" style="margin-top:12px">Each bag would be about ' + esc(lotSize(each)) + '.</p>' +
     '<div class="row" style="margin-top:18px">' +
-      '<button class="btn btn-ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
+      '<button class="btn btn-ghost" data-act="' + (m.back ? 'back-modal' : 'close-modal') + '">' +
+        (m.back ? 'Back' : 'Cancel') + '</button><span class="spacer"></span>' +
       '<button class="btn btn-primary" data-act="do-split" data-id="' + esc(l.id) + '">Split into ' + into + ' bags</button>' +
     '</div>'
   );
@@ -1568,6 +1620,7 @@ var ACTIONS = {
   refresh: function () { setState({ modal: null }); load(true); },
 
   'close-modal': function () { setState({ modal: null }); },
+  'back-modal': function () { setState({ modal: S.modal.back || null }); },
 
   'hide-toast': function () {
     clearTimeout(toastTimer);
@@ -1718,6 +1771,15 @@ var ACTIONS = {
   'date-input': function (d, el) {
     setState({ modal: Object.assign({}, S.modal, { value: el.value, monthOnly: false }) });
   },
+  // Chips select and stay open; the button at the bottom commits. Previously
+  // the chips applied and closed while the native input needed the button, so
+  // the button read as a confirmation for choices it had nothing to do with.
+  'pick-date': function (d) {
+    setState({
+      modal: Object.assign({}, S.modal, { value: d.date, monthOnly: d.monthOnly === '1' }),
+    });
+  },
+
   'set-date': function (d) {
     if (!d.date) return;
     var monthOnly = d.monthOnly === '1';
@@ -1775,9 +1837,8 @@ var ACTIONS = {
   'save-add': function () { doAdd(); },
 
   /* --- view --- */
-  'view-mode': function (d) { setState({ viewMode: d.mode, viewLimit: 60 }); },
-  'view-freezer': function (d) { setState({ viewFreezer: d.name, viewLimit: 60 }); },
-  'view-search': debounced(function (v) { setState({ viewSearch: v, viewLimit: 60 }); }),
+  'set-freezer-filter': function (d) { setState({ freezer: d.name, viewLimit: 60, takeLimit: 40 }); },
+  'set-search': debounced(function (v) { setState({ search: v, viewLimit: 60, takeLimit: 40 }); }),
   'view-more': function () { setState({ viewLimit: S.viewLimit + 60 }); },
   'toggle-open': function (d) {
     var open = Object.assign({}, S.open);
@@ -1786,9 +1847,15 @@ var ACTIONS = {
   },
 
   /* --- take --- */
-  'take-freezer': function (d) { setState({ takeFreezer: d.name, takeLimit: 40 }); },
-  'take-search': debounced(function (v) { setState({ takeSearch: v, takeLimit: 40 }); }),
   'take-more': function () { setState({ takeLimit: S.takeLimit + 40 }); },
+
+  'toggle-pick': function (d) {
+    var picked = Object.assign({}, S.selected);
+    if (picked[d.id]) delete picked[d.id]; else picked[d.id] = true;
+    setState({ selected: picked });
+  },
+  'clear-picks': function () { setState({ selected: {} }); },
+  'do-take-picked': function () { doTake(Object.keys(S.selected)); },
   'ask-take': function (d) {
     if (!requireLot(d.id)) return;
     setState({ modal: { kind: 'take', id: d.id } });
@@ -1865,7 +1932,10 @@ var ACTIONS = {
   'open-split': function (d) {
     var l = requireLot(d.id);
     if (!l) return;
-    setState({ modal: { kind: 'split', id: d.id, into: l.count > 1 ? l.count : 2, back: S.modal } });
+    // Reachable from the take dialog as well as from Change, so remember only
+    // an edit to come back to — returning to a take dialog would be a loop.
+    var back = S.modal && S.modal.kind === 'edit' ? S.modal : null;
+    setState({ modal: { kind: 'split', id: d.id, into: l.count > 1 ? l.count : 2, back: back } });
   },
   'bump-split': function (d) {
     var l = requireLot(S.modal.id);
@@ -1950,14 +2020,25 @@ function doTake(ids) {
   advanceToday();
   var lots = ids.map(lotById).filter(Boolean);
   if (!lots.length) return;
+
+  var names = {};
+  lots.forEach(function (l) { names[l.item] = (names[l.item] || 0) + 1; });
+  var kinds = Object.keys(names);
   var label = lots.length === 1
     ? lotSize(lots[0]) + ' ' + lots[0].item
-    : lots.length + ' bags';
-  var sub = 'out of the ' + lots[0].freezer + ' freezer · ' + fmtDate(S.today);
+    : kinds.slice(0, 3).map(function (n) { return names[n] > 1 ? names[n] + ' \u00d7 ' + n : n; }).join(', ') +
+      (kinds.length > 3 ? ' and ' + (kinds.length - 3) + ' more' : '');
+
+  var freezers = {};
+  lots.forEach(function (l) { freezers[l.freezer] = 1; });
+  var where = Object.keys(freezers);
+  var sub = 'out of the ' + (where.length === 1 ? where[0] + ' freezer' : where.length + ' freezers') +
+    ' \u00b7 ' + fmtDate(S.today);
 
   setState({ busy: true, modal: null });
   api('apiRemove', { ids: ids, dateOut: S.today }).then(function (res) {
     S.inventory = S.inventory.filter(function (l) { return ids.indexOf(l.id) < 0; });
+    S.selected = {};
     S.recentTakes.unshift({ label: label, sub: sub, token: res.undo });
     S.recentTakes = S.recentTakes.slice(0, 8);
     done();
@@ -2065,8 +2146,17 @@ function doUndo(token) {
 
 /* ------------------------------------------------------------ bootstrap */
 
+var slowTimer = null;
+
 function load(showToast) {
+  clearTimeout(slowTimer);
+  slowTimer = setTimeout(function () {
+    if (!S.ready) setState({ slowLoad: true });
+  }, 6000);
+
   return api('apiGetState').then(function (st) {
+    clearTimeout(slowTimer);
+    S.slowLoad = false;
     succeeded();
     S.loadFailed = false;
     S.freezers = st.freezers;
@@ -2082,6 +2172,8 @@ function load(showToast) {
     render();
     if (showToast) toast('Reloaded from the spreadsheet.');
   }).catch(function (e) {
+    clearTimeout(slowTimer);
+    S.slowLoad = false;
     // Not "ready with nothing in it" — that is indistinguishable from an empty
     // freezer, and the app then told the user to go and repair a spreadsheet
     // that was perfectly fine. An unknown state is never drawn as a known one.

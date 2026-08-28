@@ -74,10 +74,17 @@ Worth saying out loud when you send it, because people assume otherwise:
 
 - **Their data is theirs.** It lives in their Google account, in a spreadsheet
   they own. You have no access to it and cannot recover it for them.
-- **Their link is a key.** Deployed with *Anyone* access, whoever holds the URL
-  can read and change their freezer list without signing in. That is what makes
-  it painless on a tablet. If they would rather not, they can set *Who has
-  access* to **Anyone with a Google account** and sign in on the device once.
+- **Their link is a key, and it cannot be taken back.** Deployed with *Anyone*
+  access, whoever holds the URL can read and change their freezer list without
+  signing in. That is what makes it painless on a tablet, and it is the right
+  trade for frozen raspberries — but say the second half too, because it is the
+  part people want to know on the day they wish they had not forwarded the
+  email: **revoking access means creating a new deployment, which changes the
+  URL**, so the link has to be re-added to the tablet's home screen. The
+  realistic exposure is not a decision anyone makes deliberately — it is a URL
+  sitting in an email, in browser history, or in a screenshot. If that ever
+  stops feeling comfortable, *Who has access* → **Anyone with a Google account**
+  costs exactly one sign-in on the device.
 - **Backups are theirs too.** Google keeps version history on the sheet
   (**File → Version history**), which covers most accidents. For a real backup,
   **File → Download → Microsoft Excel**.
@@ -89,18 +96,27 @@ Worth saying out loud when you send it, because people assume otherwise:
 
 ## Updates
 
-Copies are frozen at the moment they were made. A fix you make later reaches
-nobody automatically. This is the price of everyone owning their own thing, and
-mostly it is the right trade: nothing you do can break someone else's freezer
-list.
+Copies do not update themselves — that is what keeps them independent, and it
+means a bad release cannot reach anyone's freezer list. Instead, each copy can
+ask whether there is a newer one:
 
-If you do want to push an update to someone who wants it:
+**Freezer Log → Check for updates** reads a small file from the project's
+repository, compares it against the build stamped into that copy, and if there
+is something newer, shows what changed and hands over each file to paste, in
+order. The spreadsheet itself is never touched.
 
-1. `npm run build`
-2. Send them `dist/Code.gs`, `dist/Index.html`, `dist/Css.html`, `dist/Js.html`
-   and `dist/Setup.html`.
-3. They paste each one over the matching file in **Extensions → Apps Script**,
-   then **Deploy → Manage deployments → ✏️ → Version: New version**.
+To publish an update:
 
-Their data is untouched by this — it lives in the spreadsheet tabs, not in the
-code. Updating the template only affects people who copy it afterwards.
+```bash
+npm run build
+npm run release -- "What changed, in one sentence."
+git add -A && git commit -m "…" && git push
+```
+
+Pushing *is* publishing: the dialog reads `latest.json` and `dist/` straight
+from the repository. Nothing is pulled until someone opens that menu and
+chooses to.
+
+Each copy shows its build date at the bottom of **Open the app / get my link**,
+so a bug report can name a version.
+

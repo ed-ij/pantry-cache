@@ -17,8 +17,8 @@ It answers three questions and no others:
 | | |
 | --- | --- |
 | **Put in** | Something has been picked and bagged. Record it. |
-| **In the freezers** | What have I got, and what has been in there longest? |
-| **Take out** | I am cooking. Remove what I have used. |
+| **In the freezers** | What have I got? Grouped by category and item. |
+| **Take out** | What has been in there longest, and remove what I have used. |
 
 ## Shape
 
@@ -106,6 +106,13 @@ says "Jul 2025" rather than inventing a 1st and showing it like a chosen day.
 removed: once a keypad exists, rounding is the user's business, not the app's.
 Ounces convert on entry and are not stored.
 
+**7a. One list per question.** *In the freezers* answers "what have I got" by
+item; *Take out* answers "what is oldest" and removes it. They used to be two
+renderings of the same list with different chrome and separate filter state,
+which is three tabs and two-and-a-half screens. The freezer filter and the
+search are shared, because standing at the Shed is a fact about where she is,
+not about which tab she is on.
+
 **7. Counts only combine when they count the same thing.** Six cobs plus four
 heads is not ten of anything, so mixed sets show their weight, or each unit
 listed separately.
@@ -153,9 +160,15 @@ refresh, so two people using it at once can act on a stale view; the app says so
 and reloads rather than doing something surprising. Fine for a household, wrong
 for a shop.
 
-**The link is a key.** Deployed with *Anyone* access, whoever holds the URL can
-read and change the log without signing in. That is what makes it painless on a
-tablet. The alternative — *Anyone with a Google account* — costs one sign-in.
+**The link is a key, and it cannot be revoked without changing it.** Deployed
+with *Anyone* access, whoever holds the URL can read and change the log without
+signing in. That is what makes it painless on a tablet, and it is kept
+deliberately. Two things follow that are worth stating: taking access away means
+a new deployment and therefore a new URL, re-added to the tablet by hand; and
+the realistic exposure is a link left in an email or a screenshot rather than a
+decision anyone made. The alternative — *Anyone with a Google account* — costs
+one sign-in. `doGet` sets `SAMEORIGIN`, so the page cannot be framed by another
+site, which anonymous write access would otherwise invite.
 
 **Copies update by pulling, never by being pushed to.** Nothing propagates on
 its own — that is constraint 11 doing its job, and a bad release cannot reach
