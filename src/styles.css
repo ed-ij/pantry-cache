@@ -1050,3 +1050,11 @@ body.is-busy .topbar::after {
 @media (prefers-reduced-motion: reduce) {
   body.is-busy .topbar::after { animation: none; background-position: 50% 0; }
 }
+
+/* A weight nobody has confirmed is a starting position, not a measurement. */
+.weigher.is-unset .weigher-value { opacity: .6; font-weight: 700; }
+.weigher.is-unset { border-style: dashed; }
+.weigher.is-unset .weigher-value small { color: var(--warm); opacity: 1; }
+
+/* The date is kept between bags on purpose; when it is not today, say so. */
+.card.is-flagged { border-color: color-mix(in srgb, var(--warm) 45%, var(--line)); }

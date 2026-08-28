@@ -223,7 +223,22 @@ function apiGetState() {
     });
 
   const inventory = DB.getAll('Inventory').filter(function (r) { return txt(r.ID); }).map(toLot);
-  const history = DB.getAll('History').filter(function (r) { return txt(r.ID); }).map(toLot);
+
+  // History is read only to keep things that are no longer in a freezer in the
+  // type-ahead, and it is never pruned — so the app's slowest path was paying,
+  // on every load and again after every rename and undo, for its least
+  // important feature. Only the four columns that matter are kept, and the
+  // rows are not converted to lots.
+  const history = DB.getAll('History')
+    .filter(function (r) { return txt(r.ID); })
+    .map(function (r) {
+      return {
+        item: txt(r.Item),
+        category: txt(r.Category) || 'Other',
+        unit: txt(r.Unit),
+        dateOut: normDate(r['Date Out']),
+      };
+    });
 
   // The Items sheet drives the type-ahead. Anything that only exists in the
   // inventory (because someone typed straight into the sheet) is folded in too,
@@ -240,19 +255,36 @@ function apiGetState() {
       uses: 0,
     };
   });
-  inventory.concat(history).forEach(function (lot) {
+  // How recently something was used, not only how often. `uses` counted every
+  // appearance in an unpruned History for ever, so an item frozen heavily three
+  // years ago outranked this season's — and the Put in grid shows six tiles per
+  // category, so that decided what she sees without tapping "+ 9 more".
+  const today = DB.today();
+  const cutoff = (Number(today.slice(0, 4)) - 1) + today.slice(4);
+
+  const score = function (lot, inFreezer) {
+    if (inFreezer) return 1;                       // in a freezer now: full weight
+    if (!lot.dateOut || lot.dateOut >= cutoff) return 1;  // used within the year
+    return 0.25;                                   // older than that: a quarter
+  };
+
+  inventory.forEach(function (lot) { tally(lot, true); });
+  history.forEach(function (lot) { tally(lot, false); });
+
+  function tally(lot, inFreezer) {
     const k = keyOf(lot.item);
     if (!k) return;
     if (!items[k]) {
       items[k] = {
-        name: lot.item, category: lot.category, typicalG: lot.weightG,
-        typicalCount: lot.count, unit: lot.unit, uses: 0,
+        name: lot.item, category: lot.category,
+        typicalG: lot.weightG || 0, typicalCount: lot.count || 0,
+        unit: lot.unit, uses: 0,
       };
     }
     // A unit typed straight into the sheet should still reach the form.
     if (!items[k].unit && lot.unit) items[k].unit = lot.unit;
-    items[k].uses += 1;
-  });
+    items[k].uses += score(lot, inFreezer);
+  }
 
   const itemList = Object.keys(items).map(function (k) { return items[k]; });
   itemList.sort(function (a, b) { return b.uses - a.uses || a.name.localeCompare(b.name); });
@@ -354,15 +386,26 @@ function verifyUndo_(token) {
 
 /* --------------------------------------------------------------- write side */
 
-/** Returns true when it added a new row to the catalogue, false when it did not. */
+/**
+ * Returns true when it added a new row to the catalogue, false when it did not.
+ *
+ * The typical values are what the Put in form pre-fills next time, and they
+ * used to be written once, on the very first bag, and never revisited — so an
+ * unusual first bag of raspberries suggested that weight for ever, with no way
+ * to correct it except editing the sheet. They now follow the most recent bag,
+ * which is what "typical" should mean for something picked in season.
+ */
 function ensureItemType(name, category, typicalG, typicalCount, unit) {
   const existing = DB.getAll('Items');
   for (let i = 0; i < existing.length; i++) {
     if (keyOf(existing[i].Item) !== keyOf(name)) continue;
-    // Known item: only fill in a unit it does not have yet, never overwrite.
-    if (unit && !txt(existing[i].Unit)) {
-      DB.updateById('Items', existing[i].Item, { Unit: unit, 'Typical count': typicalCount || '' });
-    }
+    const patch = {};
+    if (typicalG > 0) patch['Typical weight (g)'] = Math.round(typicalG);
+    if (typicalCount > 0) patch['Typical count'] = Math.round(typicalCount);
+    // A unit is only ever filled in, never overwritten: it is a name for the
+    // thing, not a measurement of this bag.
+    if (unit && !txt(existing[i].Unit)) patch.Unit = unit;
+    if (Object.keys(patch).length) DB.updateById('Items', existing[i].Item, patch);
     return false;
   }
   DB.append('Items', [{

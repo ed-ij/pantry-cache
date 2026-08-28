@@ -157,7 +157,8 @@ function ageText(iso) {
   if (b.getDate() < a.getDate()) m -= 1;
   if (m < 12) return m + ' month' + (m === 1 ? '' : 's') + ' ago';
   var y = Math.floor(m / 12), r = m % 12;
-  return y + ' year' + (y === 1 ? '' : 's') + (r ? ' ' + r + ' mth' : '') + ' ago';
+  return y + ' year' + (y === 1 ? '' : 's') +
+    (r ? ' ' + r + ' month' + (r === 1 ? '' : 's') : '') + ' ago';
 }
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
@@ -258,6 +259,10 @@ function groupBy(list, key) {
 var BLANK_DRAFT = {
   item: '', category: '', weightG: 500, count: 0, unit: '', qty: 1,
   freezer: '', dateIn: '', monthOnly: false, note: '', showNote: false, showCount: false,
+  // Constraint 6 says weights are stored exactly as entered. 500 g was entered
+  // by nobody — it is a starting position, and until she touches the control it
+  // is drawn as a suggestion and refuses to save.
+  weightConfirmed: false,
 };
 
 /** Words that come up often enough to be worth one tap. */
@@ -268,6 +273,19 @@ var UNIT_SUGGESTIONS = ['cobs', 'portions', 'pieces', 'heads', 'bunches', 'stick
  * it is not among them — otherwise a bag of "blocks" shows no chip selected
  * and every chip looks like a change.
  */
+/**
+ * Stores the plural, because fmtCount only ever singularises. Type "cob" and
+ * every screen read "6 cob" for ever, with no way to fix it but editing each
+ * bag.
+ */
+function pluralUnit(word) {
+  var w = String(word || '').trim();
+  if (!w || /s$/i.test(w)) return w;
+  if (/(x|ch|sh)$/i.test(w)) return w + 'es';
+  if (/[^aeiou]y$/i.test(w)) return w.slice(0, -1) + 'ies';
+  return w + 's';
+}
+
 function unitChoices(current) {
   var c = norm(current);
   if (c && UNIT_SUGGESTIONS.indexOf(c) < 0) return [current].concat(UNIT_SUGGESTIONS);
@@ -473,7 +491,12 @@ function renderLoading() {
 }
 
 function renderTopRight() {
-  var total = sum(S.inventory, function (l) { return l.weightG; });
+  // lotsSize, not a bare weight sum: 42 cobs of sweetcorn with no weight were
+  // reported as 0, while the freezers view — using the same data — said "42
+  // cobs". The number that is always on screen was the wrong one.
+  var totals = lotsSize(S.inventory, true);
+  var total = totals[0] === '\u2014' ? '0 g' : totals[0];
+  var extra = totals.length > 1 ? ' +' + (totals.length - 1) : '';
   if (!S.ready) return '';
   // "0 g stored" beside a banner saying nothing could be read is exactly the
   // confident-and-wrong number the banner exists to avoid.
@@ -485,7 +508,8 @@ function renderTopRight() {
     return '<span class="badge badge-warm">Offline &mdash; cannot save</span>' +
       '<button class="btn btn-ghost btn-compact" data-act="refresh" title="Try again">&#8635;</button>';
   }
-  return '<span class="badge">' + esc(fmtW(total)) + ' stored</span>' +
+  return '<span class="badge" title="' + esc(totals.join(' \u00b7 ')) + '">' +
+    esc(total) + esc(extra) + ' stored</span>' +
     '<button class="btn btn-ghost btn-compact" data-act="refresh" title="Reload from the spreadsheet">&#8635;</button>';
 }
 
@@ -652,10 +676,14 @@ function countFreezers(lots) {
 
 function renderAddDetails() {
   var d = S.draft;
-  var canSave = d.item && d.freezer && (d.weightG > 0 || d.count > 0) && !S.busy;
+  var sized = (d.weightG > 0 && d.weightConfirmed) || (d.showCount && d.count > 0);
+  var canSave = d.item && d.freezer && sized && !S.busy;
 
+  // An unconfirmed weight must not light its chip up: a selected "500 g"
+  // beside a readout saying it is a guess says two opposite things at once.
   var weightChips = [100, 250, 500, 1000, 2000].map(function (g) {
-    return '<button class="chip' + (d.weightG === g ? ' is-on' : '') + '" data-act="set-weight" data-g="' + g + '">' + fmtW(g) + '</button>';
+    var on = d.weightG === g && d.weightConfirmed;
+    return '<button class="chip' + (on ? ' is-on' : '') + '" data-act="set-weight" data-g="' + g + '">' + fmtW(g) + '</button>';
   }).join('');
 
   var freezerBtns = S.freezers.map(function (f) {
@@ -663,6 +691,7 @@ function renderAddDetails() {
       dot(f.colour) + esc(f.name) + '</button>';
   }).join('');
 
+  var backdated = !!d.dateIn && (d.dateIn !== S.today || d.monthOnly);
   var dateLabel = d.dateIn === S.today && !d.monthOnly
     ? 'Today &middot; ' + esc(fmtDate(d.dateIn))
     : esc(fmtWhen({ dateIn: d.dateIn, monthOnly: d.monthOnly }));
@@ -682,7 +711,11 @@ function renderAddDetails() {
     '<div class="card stack">' +
       '<div><span class="label">How much in each bag or tub?</span>' +
         (d.weightG > 0
-          ? stepControl(d.weightG, { steps: WEIGHT_STEPS, fmt: fmtW, noun: 'grams', bump: 'bump-weight', type: 'type-weight' })
+          ? stepControl(d.weightG, {
+              steps: WEIGHT_STEPS, fmt: fmtW, noun: 'grams',
+              bump: 'bump-weight', type: 'type-weight',
+              hint: d.weightConfirmed ? '' : 'a guess — set it',
+            })
           : '<div class="not-set">Not weighed <button class="btn btn-ghost" data-act="set-weight" data-g="500">Add a weight</button></div>') +
         '<div class="chips" style="margin-top:10px">' + weightChips +
           (d.weightG > 0 && d.count > 0
@@ -723,12 +756,22 @@ function renderAddDetails() {
       (S.freezers.length ? '' : '<div class="muted small" style="margin-top:8px">No freezers listed yet &mdash; add them on the <b>Freezers</b> tab of the spreadsheet.</div>') +
     '</div>' +
 
-    '<div class="card">' +
+    '<div class="card' + (backdated ? ' is-flagged' : '') + '">' +
       '<span class="label">Date it went in</span>' +
       '<div class="row">' +
-        '<div class="spacer" style="font-size:1.1rem;font-weight:700">' + dateLabel + '</div>' +
+        '<div class="spacer" style="font-size:1.1rem;font-weight:700">' + dateLabel +
+          (backdated ? ' <span class="badge badge-warm">not today</span>' : '') + '</div>' +
         '<button class="btn" data-act="open-date">Change date</button>' +
       '</div>' +
+      // The date is kept between bags so a run of bagging-up stays quick, and
+      // it is the one field that is occasionally wrong on purpose. Backdate one
+      // bag and every bag after it was silently filed under that month, with
+      // the only signal being that the word "Today" quietly disappeared.
+      (backdated
+        ? '<div class="muted small" style="margin-top:8px">' +
+          'Kept from the last bag. <button class="btn btn-ghost btn-compact" style="padding-left:0" ' +
+          'data-act="set-date" data-date="' + S.today + '">Use today instead</button></div>'
+        : '') +
       (d.showNote
         ? '<div style="margin-top:14px"><span class="label">Note (optional)</span>' +
           '<input class="input" id="note-input" type="text" placeholder="e.g. from the top bed" value="' + esc(d.note) + '" data-act="note"></div>'
@@ -770,10 +813,10 @@ function stepControl(value, opts) {
       (by > 0 ? '&plus;' : '&minus;') + Math.abs(by) + '</button>';
   }
 
-  return '<div class="weigher">' +
+  return '<div class="weigher' + (opts.hint ? ' is-unset' : '') + '">' +
     btn(-steps[0]) + btn(-steps[1]) +
     '<button class="weigher-value" id="' + esc(opts.type) + '" data-act="' + opts.type + '" aria-label="Type an exact ' + esc(opts.noun) + '">' +
-      esc(fmt(value)) + '<small>tap to type</small></button>' +
+      esc(fmt(value)) + '<small>' + esc(opts.hint || 'tap to type') + '</small></button>' +
     btn(steps[1]) + btn(steps[0]) +
     '</div>';
 }
@@ -790,13 +833,16 @@ function draftEach(d) {
  */
 function draftSummary(d) {
   var each = draftEach(d);
-  if (d.qty === 1) return each;
+  var dated = d.dateIn && d.dateIn !== S.today
+    ? ' \u2014 dated ' + fmtWhen({ dateIn: d.dateIn, monthOnly: d.monthOnly })
+    : '';
+  if (d.qty === 1) return each + dated;
   var total = lotSize({
     weightG: d.weightG * d.qty,
     count: (d.showCount ? d.count : 0) * d.qty,
     unit: d.unit,
   });
-  return d.qty + ' bags of ' + each + ' \u2014 ' + total + ' in total';
+  return d.qty + ' bags of ' + each + ' \u2014 ' + total + ' in total' + dated;
 }
 
 function renderRecentAdds() {
@@ -913,7 +959,14 @@ function stat(num, label, sub) {
 function totalStat(lots) {
   var totals = lotsSize(lots, true);
   var weighed = lots.some(function (l) { return l.weightG > 0; });
-  var sub = totals.length <= 3 ? totals.slice(1).join(' \u00b7 ') : '';
+  // Was: dropped to '' entirely at four or more measures, so with cobs,
+  // litres, blocks and boxes in the freezers the summary showed the weight and
+  // silently omitted the rest. Constraint 7 says not to add them up; that is
+  // not a licence to hide them.
+  var rest = totals.slice(1);
+  var sub = rest.length <= 2
+    ? rest.join(' \u00b7 ')
+    : rest.slice(0, 2).join(' \u00b7 ') + ' \u00b7 +' + (rest.length - 2) + ' more';
   return stat(totals[0], weighed ? 'Total weight' : 'Total', sub);
 }
 
@@ -1572,11 +1625,13 @@ var ACTIONS = {
   /* --- add: details --- */
   'bump-weight': function (d) {
     var next = Math.max(1, S.draft.weightG + Number(d.by));
-    setState({ draft: Object.assign({}, S.draft, { weightG: next }) });
+    setState({ draft: Object.assign({}, S.draft, { weightG: next, weightConfirmed: true }) });
   },
 
   'set-weight': function (d) {
-    setState({ draft: Object.assign({}, S.draft, { weightG: Number(d.g) }) });
+    setState({ draft: Object.assign({}, S.draft, {
+      weightG: Number(d.g), weightConfirmed: Number(d.g) > 0,
+    }) });
   },
 
   'set-part-count': function (d) {
@@ -1636,7 +1691,7 @@ var ACTIONS = {
     else if (m.target === 'edit-weight') setState({ modal: Object.assign({}, m.back, { weightG: v }) });
     else if (m.target === 'edit-count') setState({ modal: Object.assign({}, m.back, { count: v }) });
     else if (m.target === 'split') setState({ modal: Object.assign({}, m.back, { into: Math.max(2, v) }) });
-    else setState({ modal: null, draft: Object.assign({}, S.draft, { weightG: v }) });
+    else setState({ modal: null, draft: Object.assign({}, S.draft, { weightG: v, weightConfirmed: true }) });
   },
 
   'bump-qty': function (d) {
@@ -1677,9 +1732,11 @@ var ACTIONS = {
   },
 
   'hide-count': function () {
-    // Taking the count away has to leave a weight behind, or nothing is recorded.
-    var w = S.draft.weightG > 0 ? S.draft.weightG : 500;
-    setState({ draft: Object.assign({}, S.draft, { showCount: false, count: 0, unit: '', weightG: w }) });
+    // Taking the count away leaves the bag with no size at all unless a weight
+    // was already given. It used to substitute 500 g here, silently, which is
+    // the same invented number wearing a different hat: Save is simply
+    // unavailable until she says how much.
+    setState({ draft: Object.assign({}, S.draft, { showCount: false, count: 0, unit: '' }) });
   },
 
   'bump-count': function (d) {
@@ -1698,7 +1755,7 @@ var ACTIONS = {
   'unit-input': function (d, el) { S.modal.value = el.value; },
 
   'apply-unit': function () {
-    var u = String(S.modal.value || '').trim();
+    var u = pluralUnit(String(S.modal.value || '').trim());
     setState({ modal: null, draft: Object.assign({}, S.draft, { unit: u || 'pieces' }) });
   },
 
