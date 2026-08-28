@@ -510,7 +510,7 @@ function renderTopRight() {
   // cobs". The number that is always on screen was the wrong one.
   var totals = lotsSize(S.inventory, true);
   var total = totals[0] === '\u2014' ? '0 g' : totals[0];
-  var extra = totals.length > 1 ? ' +' + (totals.length - 1) : '';
+  var extra = totals.length > 1;
   if (!S.ready) return '';
   // "0 g stored" beside a banner saying nothing could be read is exactly the
   // confident-and-wrong number the banner exists to avoid.
@@ -523,7 +523,7 @@ function renderTopRight() {
       '<button class="btn btn-ghost btn-compact" data-act="refresh" title="Try again">&#8635;</button>';
   }
   return '<span class="badge" title="' + esc(totals.join(' \u00b7 ')) + '">' +
-    esc(total) + esc(extra) + ' stored</span>' +
+    esc(extra ? total + ' +' + (totals.length - 1) + ' more' : total + ' stored') + '</span>' +
     '<button class="btn btn-ghost btn-compact" data-act="refresh" title="Reload from the spreadsheet">&#8635;</button>';
 }
 

@@ -1,6 +1,6 @@
 {
-  "build": "2026-08-28T22:04:54Z",
-  "commit": "9575db0",
-  "notes": "Reads the spreadsheet by header name; month-only dates; kg/oz/lb understood.",
-  "published": "2026-08-28T22:04:54.967Z"
+  "build": "2026-08-28T22:23:28Z",
+  "commit": "79614df",
+  "notes": "Two reviews' worth of fixes: honest failure states, undo you can rely on, multi-select take-out, and a readable light theme.",
+  "published": "2026-08-28T22:23:28.558Z"
 }
