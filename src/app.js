@@ -59,6 +59,39 @@ function todayISO() {
   return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
 }
 
+/**
+ * The day this tab last saw, by the browser's clock. `S.today` itself comes
+ * from the spreadsheet — its timezone is what decides the date — so this is
+ * only used to notice that midnight has passed.
+ *
+ * It has to be noticed, because this app is meant to sit on a tablet left
+ * switched on beside a freezer. Without it, `S.today` is whatever it was when
+ * the page loaded: the morning's produce is stamped yesterday, the take-out
+ * dates in History are wrong, and every "1 year 1 mth ago" is measured from a
+ * stale point.
+ */
+var seenDay = todayISO();
+
+function dayRolled() {
+  var now = todayISO();
+  if (now === seenDay) return false;
+  seenDay = now;
+  return true;
+}
+
+/**
+ * Brings `S.today` forward without waiting for a round trip, for the moment
+ * just before a write. A date the user chose deliberately is left alone; only
+ * one that was simply the default follows the clock.
+ */
+function advanceToday() {
+  var now = todayISO();
+  if (now === S.today) return;
+  var wasDefault = S.draft.dateIn === S.today;
+  S.today = now;
+  if (wasDefault) S.draft.dateIn = now;
+}
+
 function fmtDate(iso) {
   if (!iso) return '—';
   return parseISO(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -1505,6 +1538,7 @@ var ACTIONS = {
 /* ---------------------------------------------------------- operations */
 
 function doAdd() {
+  advanceToday();
   var d = S.draft;
   var payload = {
     item: d.item, category: d.category, freezer: d.freezer,
@@ -1538,6 +1572,7 @@ function doAdd() {
 }
 
 function doTake(ids) {
+  advanceToday();
   var lots = ids.map(lotById).filter(Boolean);
   if (!lots.length) return;
   var label = lots.length === 1
@@ -1559,6 +1594,7 @@ function doTake(ids) {
 }
 
 function doPart(id, value) {
+  advanceToday();
   var lot = lotById(id);
   if (!lot) return;
   var counted = lot.count > 0;
@@ -1698,6 +1734,15 @@ window.addEventListener('offline', function () { setState({ offline: true }); })
 window.addEventListener('online', function () {
   setState({ offline: false });
   load(false);
+});
+
+/**
+ * The usual shape of a new day here is a tablet that was asleep: it wakes, the
+ * page becomes visible, and nothing has been touched yet. Reloading at that
+ * moment gets the sheet's own date back before the first tap.
+ */
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'visible' && dayRolled()) load(false);
 });
 
 render();

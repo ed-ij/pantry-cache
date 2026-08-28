@@ -240,6 +240,9 @@ function doGet() {
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('Freezer Log')
+    // Deployed with Anyone access, so the URL alone can write. Without this,
+    // any page may frame the app, which is the whole of a clickjacking setup.
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.SAMEORIGIN)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
 }
 

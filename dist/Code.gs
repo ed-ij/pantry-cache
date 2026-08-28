@@ -242,6 +242,9 @@ function doGet() {
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('Freezer Log')
+    // Deployed with Anyone access, so the URL alone can write. Without this,
+    // any page may frame the app, which is the whole of a clickjacking setup.
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.SAMEORIGIN)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
 }
 
@@ -337,10 +340,26 @@ const SEED_FREEZERS = [
 
 /* ------------------------------------------------------------------ helpers */
 
+/**
+ * A batch of bags is minted in one tight loop, in the same millisecond, so the
+ * timestamp does not separate them and three random characters is a birthday
+ * problem against 46,656 — at the 99 the quantity stepper offers, roughly one
+ * batch in twelve contained a duplicate. A duplicate ID is not cosmetic:
+ * deleteByIds and findRow_ both match on the string, so taking one of the twins
+ * out of the freezer removes both.
+ *
+ * The counter makes a collision within one batch impossible. It starts at a
+ * random offset so that two executions landing in the same millisecond do not
+ * both begin at zero.
+ */
+let idSeq_ = Math.floor(Math.random() * 1296);
+
 function newId(prefix) {
   const stamp = Date.now().toString(36).toUpperCase();
+  idSeq_ = (idSeq_ + 1) % 1296;
+  const seq = idSeq_.toString(36).toUpperCase();
   const salt = Math.floor(Math.random() * 46656).toString(36).toUpperCase();
-  return prefix + stamp + ('000' + salt).slice(-3);
+  return prefix + stamp + ('00' + seq).slice(-2) + ('000' + salt).slice(-3);
 }
 
 function num(v) {
@@ -537,42 +556,55 @@ function apiAdd(p) {
   });
 }
 
+/**
+ * Moves whole bags from Inventory to History. Unlocked; callers hold the lock —
+ * the same convention as renameItem_, so apiRemovePart can finish a full
+ * removal without taking the lock a second time.
+ *
+ * The append comes before the delete deliberately. Apps Script has no
+ * transactions, so the only lever a two-table write has is which half survives
+ * a failure between them: appending first can leave a bag recorded twice, which
+ * is visible and repairable, where deleting first would lose it outright.
+ */
+function removeWhole_(ids, dateOutRaw) {
+  if (!ids.length) throw new Error('Nothing selected to take out.');
+  const dateOut = normDate(dateOutRaw) || DB.today();
+
+  const byId = {};
+  DB.getAll('Inventory').forEach(function (r) { byId[txt(r.ID)] = r; });
+
+  const histRows = [];
+  const foundIds = [];
+  ids.forEach(function (id) {
+    const r = byId[txt(id)];
+    if (!r) return;
+    foundIds.push(txt(id));
+    histRows.push({
+      ID: txt(r.ID),
+      Item: txt(r.Item),
+      Category: txt(r.Category),
+      Freezer: txt(r.Freezer),
+      'Weight (g)': Math.round(num(r['Weight (g)'])) || '',
+      'Date In': normDate(r['Date In']),
+      'Date Out': dateOut,
+      Note: txt(r.Note),
+      Count: Math.round(num(r.Count)) || '',
+      Unit: txt(r.Unit),
+    });
+  });
+  if (!foundIds.length) throw new Error('Those bags are no longer in the freezer.');
+
+  DB.append('History', histRows);
+  DB.deleteByIds('Inventory', foundIds);
+
+  return { removed: histRows.map(toLot), undo: { type: 'remove', ids: foundIds } };
+}
+
 /** Takes whole bags out: moves them from Inventory to History. */
 function apiRemove(p) {
   return DB.lock(function () {
     DB.ensure();
-    const ids = (p && p.ids) || [];
-    if (!ids.length) throw new Error('Nothing selected to take out.');
-    const dateOut = normDate(p.dateOut) || DB.today();
-
-    const byId = {};
-    DB.getAll('Inventory').forEach(function (r) { byId[txt(r.ID)] = r; });
-
-    const histRows = [];
-    const foundIds = [];
-    ids.forEach(function (id) {
-      const r = byId[txt(id)];
-      if (!r) return;
-      foundIds.push(txt(id));
-      histRows.push({
-        ID: txt(r.ID),
-        Item: txt(r.Item),
-        Category: txt(r.Category),
-        Freezer: txt(r.Freezer),
-        'Weight (g)': Math.round(num(r['Weight (g)'])) || '',
-        'Date In': normDate(r['Date In']),
-        'Date Out': dateOut,
-        Note: txt(r.Note),
-        Count: Math.round(num(r.Count)) || '',
-        Unit: txt(r.Unit),
-      });
-    });
-    if (!foundIds.length) throw new Error('Those bags are no longer in the freezer.');
-
-    DB.append('History', histRows);
-    DB.deleteByIds('Inventory', foundIds);
-
-    return { removed: histRows.map(toLot), undo: { type: 'remove', ids: foundIds } };
+    return removeWhole_((p && p.ids) || [], p && p.dateOut);
   });
 }
 
@@ -582,35 +614,38 @@ function apiRemove(p) {
  * same proportion. A bag that is only weighed splits by weight.
  */
 function apiRemovePart(p) {
-  const id = txt(p && p.id);
-  const lot = DB.getAll('Inventory').filter(function (r) { return txt(r.ID) === id; })[0];
-  if (!lot) throw new Error('That bag is no longer in the freezer.');
-
-  const haveW = Math.round(num(lot['Weight (g)']));
-  const haveC = Math.round(num(lot.Count));
-
-  let takeC = 0;
-  let takeW = 0;
-
-  if (haveC > 0) {
-    takeC = Math.round(num(p && p.count));
-    if (takeC <= 0) throw new Error('Please enter how many you are taking out.');
-    if (takeC >= haveC) return apiRemove({ ids: [id], dateOut: p.dateOut });
-    takeW = haveW ? Math.round((haveW * takeC) / haveC) : 0;
-  } else {
-    takeW = Math.round(num(p && p.weightG));
-    if (takeW <= 0) throw new Error('Please enter how much you are taking out.');
-    if (takeW >= haveW) return apiRemove({ ids: [id], dateOut: p.dateOut });
-  }
-
   return DB.lock(function () {
-    const dateOut = normDate(p.dateOut) || DB.today();
+    DB.ensure();
+
+    // The read has to sit inside the lock with the write that depends on it.
+    // Read it outside and two overlapping part-removals both see 900 g, each
+    // subtract 300, and the second write puts 300 g back that is not there.
+    const id = txt(p && p.id);
+    const lot = DB.getAll('Inventory').filter(function (r) { return txt(r.ID) === id; })[0];
+    if (!lot) throw new Error('That bag is no longer in the freezer.');
+
+    const haveW = Math.round(num(lot['Weight (g)']));
+    const haveC = Math.round(num(lot.Count));
+
+    let takeC = 0;
+    let takeW = 0;
+
+    if (haveC > 0) {
+      takeC = Math.round(num(p && p.count));
+      if (takeC <= 0) throw new Error('Please enter how many you are taking out.');
+      if (takeC >= haveC) return removeWhole_([id], p && p.dateOut);
+      takeW = haveW ? Math.round((haveW * takeC) / haveC) : 0;
+    } else {
+      takeW = Math.round(num(p && p.weightG));
+      if (takeW <= 0) throw new Error('Please enter how much you are taking out.');
+      if (takeW >= haveW) return removeWhole_([id], p && p.dateOut);
+    }
+
+    const dateOut = normDate(p && p.dateOut) || DB.today();
     const historyId = newId('L');
 
-    DB.updateById('Inventory', id, {
-      'Weight (g)': haveW - takeW || '',
-      Count: haveC - takeC || '',
-    });
+    // History first, then the decrement — see removeWhole_ for why the
+    // additive write always goes first.
     DB.append('History', [{
       ID: historyId,
       Item: txt(lot.Item),
@@ -623,6 +658,10 @@ function apiRemovePart(p) {
       Count: takeC || '',
       Unit: txt(lot.Unit),
     }]);
+    DB.updateById('Inventory', id, {
+      'Weight (g)': haveW - takeW || '',
+      Count: haveC - takeC || '',
+    });
 
     return { undo: { type: 'part', id: id, weightG: takeW, count: takeC, historyId: historyId } };
   });
