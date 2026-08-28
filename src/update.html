@@ -1,0 +1,253 @@
+<!--
+  The "Check for updates" dialog.
+
+  Each copy of the spreadsheet carries its own copy of the code, which is what
+  keeps households independent. The cost is that a fix has to be carried across
+  by hand. This dialog makes that as close to mechanical as it can be: it says
+  whether there is anything newer, what changed, and hands over each file ready
+  to copy, in the order they need pasting.
+
+  It never writes anything itself. Nothing here can change the freezer list.
+-->
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 18px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #16222e;
+    background: #fff;
+  }
+  h1 { font-size: 19px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  p { margin: 0 0 12px; }
+  .muted { color: #4d5f70; }
+  .path {
+    background: #eef3f8;
+    border-radius: 5px;
+    padding: 1px 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+  .stamp {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    border: 1px solid #d7e0ea;
+    border-radius: 8px;
+    background: #f7fafd;
+    margin-bottom: 14px;
+  }
+  .stamp div { min-width: 0; }
+  .stamp dt {
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: #5b6d7e;
+    margin: 0 0 2px;
+  }
+  .stamp dd {
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+  }
+  .note {
+    border-left: 3px solid #197a52;
+    background: #e9f5ef;
+    padding: 10px 12px;
+    border-radius: 0 8px 8px 0;
+    margin: 0 0 14px;
+    color: #146141;
+  }
+  .note-warn { border-left-color: #9c410f; background: #fdf3ec; color: #7d3a0d; }
+  ol { margin: 0 0 14px; padding-left: 20px; }
+  li { margin-bottom: 12px; }
+  .file {
+    border: 1px solid #d7e0ea;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .file-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    background: #f2f6fa;
+    border-bottom: 1px solid #d7e0ea;
+  }
+  .file-name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .file-where { color: #5b6d7e; font-size: 12.5px; }
+  .spacer { flex: 1; }
+  textarea {
+    display: block;
+    width: 100%;
+    height: 150px;
+    border: 0;
+    border-radius: 0;
+    padding: 10px 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px;
+    line-height: 1.45;
+    resize: vertical;
+    background: #fff;
+    color: #16222e;
+  }
+  .btn {
+    appearance: none;
+    border: 1px solid #cfdae6;
+    background: #fff;
+    border-radius: 8px;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    color: #16222e;
+    white-space: nowrap;
+  }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn-primary { background: #0d6ec9; border-color: #0d6ec9; color: #fff; }
+  .said { color: #146141; font-size: 12.5px; font-weight: 600; }
+</style>
+
+<div id="root"><p class="muted">Checking&hellip;</p></div>
+
+<script>
+  function esc(s) {
+    return String(s === null || s === undefined ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /** "2026-08-28T14:03:11Z" reads badly in a dialog; this does not. */
+  function when(stamp) {
+    if (!stamp) return 'unknown';
+    var d = new Date(stamp);
+    if (isNaN(d.getTime())) return stamp;
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  var root = document.getElementById('root');
+
+  function fail(msg) {
+    root.innerHTML =
+      '<h1>Could not check</h1>' +
+      '<p class="muted">' + esc(msg) + '</p>' +
+      '<button class="btn" onclick="start()">Try again</button>';
+  }
+
+  function render(st) {
+    if (st.error) return fail(st.error);
+
+    var stamp =
+      '<div class="stamp">' +
+        '<div><dt>This copy</dt><dd>' + esc(when(st.build)) + '</dd></div>' +
+        '<div><dt>Newest</dt><dd>' + esc(when(st.latest)) + '</dd></div>' +
+        '<div><dt>Version</dt><dd>' + esc(st.commit || '—') + '</dd></div>' +
+      '</div>';
+
+    if (!st.newer) {
+      root.innerHTML =
+        '<h1>You are up to date</h1>' +
+        '<p class="muted">Nothing to do. This copy is running the newest published version.</p>' +
+        stamp +
+        '<button class="btn" onclick="start()">Check again</button>';
+      return;
+    }
+
+    root.innerHTML =
+      '<h1>There is a newer version</h1>' +
+      '<p class="muted">Nothing has changed yet. Updating means copying each file below into the ' +
+      'script editor, in order, then publishing. Your freezer list is not touched.</p>' +
+      stamp +
+      (st.notes ? '<div class="note">' + esc(st.notes) + '</div>' : '') +
+      '<ol>' +
+        '<li>Open <span class="path">Extensions</span> &rarr; <span class="path">Apps Script</span> ' +
+          'in a new tab, and leave this dialog open beside it.</li>' +
+        '<li>For each file below: press <em>Copy</em>, click the matching file in the script ' +
+          'editor, select everything that is there, and paste over it.</li>' +
+        '<li>Save, then <span class="path">Deploy</span> &rarr; ' +
+          '<span class="path">Manage deployments</span> &rarr; the pencil icon &rarr; ' +
+          '<em>Version: New version</em> &rarr; <span class="path">Deploy</span>. ' +
+          'Your web address stays the same.</li>' +
+      '</ol>' +
+      '<div id="files"></div>' +
+      '<div class="note note-warn">If anything goes wrong, nothing is lost — the data lives in ' +
+      'this spreadsheet, not in the code. Paste the files again and re-deploy.</div>';
+
+    var host = document.getElementById('files');
+    host.innerHTML = st.files.map(function (f, i) {
+      return '<div class="file">' +
+        '<div class="file-head">' +
+          '<span class="file-name">' + esc(f.name) + '</span>' +
+          '<span class="file-where">&rarr; ' + esc(f.where) + '</span>' +
+          '<span class="spacer"></span>' +
+          '<span class="said" id="said-' + i + '"></span>' +
+          '<button class="btn btn-primary" id="get-' + i + '" ' +
+            'onclick="load(' + i + ', \'' + esc(f.name) + '\')">Show &amp; copy</button>' +
+        '</div>' +
+        '<div id="body-' + i + '"></div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function load(i, name) {
+    var btn = document.getElementById('get-' + i);
+    btn.disabled = true;
+    btn.textContent = 'Fetching…';
+    google.script.run
+      .withSuccessHandler(function (text) {
+        var body = document.getElementById('body-' + i);
+        body.innerHTML = '<textarea id="ta-' + i + '" spellcheck="false"></textarea>';
+        var ta = document.getElementById('ta-' + i);
+        ta.value = text;
+        btn.disabled = false;
+        btn.textContent = 'Copy again';
+        copy(i);
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false;
+        btn.textContent = 'Try again';
+        document.getElementById('said-' + i).textContent =
+          (err && err.message) || 'Could not fetch that file.';
+      })
+      .apiUpdateFile(name);
+  }
+
+  function copy(i) {
+    var ta = document.getElementById('ta-' + i);
+    var said = document.getElementById('said-' + i);
+    ta.focus();
+    ta.select();
+    // The dialog runs in a sandboxed frame where the clipboard API is often
+    // unavailable; the selection above is the fallback and is already made.
+    try {
+      navigator.clipboard.writeText(ta.value).then(
+        function () { said.textContent = 'Copied'; },
+        function () { said.textContent = 'Selected — press ⌘C or Ctrl+C'; },
+      );
+    } catch (e) {
+      said.textContent = 'Selected — press ⌘C or Ctrl+C';
+    }
+  }
+
+  function start() {
+    root.innerHTML = '<p class="muted">Checking&hellip;</p>';
+    google.script.run
+      .withSuccessHandler(render)
+      .withFailureHandler(function (err) {
+        fail((err && err.message) || 'Could not reach the update server.');
+      })
+      .apiUpdateStatus();
+  }
+
+  start();
+</script>

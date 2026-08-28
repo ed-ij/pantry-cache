@@ -248,4 +248,91 @@ assert.equal(hand.dateIn, '2025-09-03', 'dd/mm/yyyy read correctly');
 assert.equal(hand.weightG, 750, 'text weight read as a number');
 assert.ok(st.items.some((i) => i.name === 'Damsons'), 'hand-typed item joins the suggestions');
 
+/* ==========================================================================
+   "And then something else happened."
+
+   The existing checks above undo every action immediately after performing it,
+   which is the shape the code was written in — and is why four Critical
+   findings survived to the first review. These do the other thing: perform an
+   action, perform a different one, then reach for the first undo.
+   ========================================================================== */
+
+const fresh = () => {
+  for (const k of Object.keys(store)) delete store[k];
+  DB.ensure();
+};
+
+/* --- D6: a batch must not mint two rows with the same ID --- */
+fresh();
+for (let trial = 0; trial < 200; trial++) {
+  store.Inventory = [];
+  B.apiAdd({
+    item: 'Raspberries', category: 'Fruit', freezer: 'Kitchen',
+    weightG: 500, qty: 99, dateIn: '2026-08-01',
+  });
+  const ids = store.Inventory.map((r) => r.ID);
+  assert.equal(new Set(ids).size, ids.length, `D6: duplicate ID in batch on trial ${trial}`);
+}
+
+/* --- D4: undoing an add whose bags were since split must refuse, not lie --- */
+fresh();
+const added2 = B.apiAdd({
+  item: 'Blackcurrants', category: 'Fruit', freezer: 'Kitchen',
+  weightG: 800, qty: 1, dateIn: '2026-08-01',
+});
+B.apiSplitLot({ id: added2.lots[0].id, into: 4 });
+assert.equal(stock().length, 4, 'D4: split produced four bags');
+assert.throws(
+  () => B.apiUndo(added2.undo),
+  /cannot be undone|has changed|no longer/i,
+  'D4: a stale add-undo must say so rather than reporting success',
+);
+assert.equal(stock().length, 4, 'D4: nothing was touched by the refused undo');
+
+/* --- D4: undoing a part2-removal after an edit must not add onto the new value --- */
+fresh();
+const corn2 = B.apiAdd({
+  item: 'Sweetcorn', category: 'Vegetables', freezer: 'Kitchen',
+  weightG: 900, count: 6, unit: 'cobs', qty: 1, dateIn: '2026-08-01',
+});
+const part2 = B.apiRemovePart({ id: corn2.lots[0].id, count: 2, dateOut: '2026-08-10' });
+B.apiEditLot({ id: corn2.lots[0].id, patch: { weightG: 100 } });
+assert.throws(
+  () => B.apiUndo(part2.undo),
+  /cannot be undone|has changed|no longer/i,
+  'D4: a part2-undo across an edit must refuse',
+);
+assert.equal(stock()[0].weightG, 100, 'D4: the edit survived the refused undo');
+
+/* --- D5: undoing a merged rename must not rename bags it never touched --- */
+fresh();
+B.apiAdd({ item: 'French beans', category: 'Vegetables', freezer: 'Kitchen', weightG: 300, qty: 2, dateIn: '2026-08-01' });
+B.apiAdd({ item: 'Runner beans', category: 'Vegetables', freezer: 'Kitchen', weightG: 300, qty: 3, dateIn: '2026-08-01' });
+const merged = B.apiRenameItem({ from: 'French beans', to: 'Runner beans' });
+assert.equal(stock().filter((l) => l.item === 'Runner beans').length, 5, 'D5: merge happened');
+if (merged.undo) {
+  B.apiUndo(merged.undo);
+  assert.equal(stock().filter((l) => l.item === 'French beans').length, 2, 'D5: only the two merged bags go back');
+  assert.equal(stock().filter((l) => l.item === 'Runner beans').length, 3, 'D5: the three originals stay put');
+}
+
+/* --- D3: an undo token the server never issued must be refused --- */
+fresh();
+const forged = B.apiAdd({ item: 'Figs', category: 'Fruit', freezer: 'Kitchen', weightG: 400, qty: 2, dateIn: '2026-08-01' });
+assert.throws(
+  () => B.apiUndo({ type: 'add', ids: stock().map((l) => l.id) }),
+  /cannot be undone|not recognised|nothing to undo/i,
+  'D3: a hand-written token must not be accepted as authority to delete',
+);
+assert.equal(stock().length, 2, 'D3: nothing was deleted by the forged token');
+
+/* --- ...and a real handle works once, then is spent --- */
+B.apiUndo(forged.undo);
+assert.equal(stock().length, 0, 'a genuine undo still works');
+assert.throws(
+  () => B.apiUndo(forged.undo),
+  /already|cannot be undone|nothing to undo/i,
+  'a spent handle is refused the second time',
+);
+
 console.log('All backend checks passed.');

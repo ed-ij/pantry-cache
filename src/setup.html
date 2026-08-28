@@ -72,6 +72,7 @@
 
 <script>
   var APP_URL = '__APP_URL__';
+  var BUILD = '__BUILD__';
 
   function esc(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -119,8 +120,21 @@
       'this spreadsheet, in your own Google account. Nobody else can see it.</div>';
   }
 
+  function stamp() {
+    // So a bug report can name a version, and "Check for updates" has
+    // something to compare against.
+    if (!BUILD || BUILD.indexOf('__') === 0) return '';
+    var d = new Date(BUILD);
+    var when = isNaN(d.getTime())
+      ? BUILD
+      : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    return '<p class="muted" style="margin-top:18px;font-size:12.5px">' +
+      'This copy was built ' + esc(when) + '. ' +
+      'Use <em>Freezer Log &rarr; Check for updates</em> to see if there is a newer one.</p>';
+  }
+
   document.getElementById('root').innerHTML =
-    APP_URL && APP_URL.indexOf('http') === 0 ? deployed() : notDeployed();
+    (APP_URL && APP_URL.indexOf('http') === 0 ? deployed() : notDeployed()) + stamp();
 
   var copy = document.getElementById('copy');
   if (copy) {

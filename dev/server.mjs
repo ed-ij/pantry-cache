@@ -144,9 +144,39 @@ const server = createServer(async (req, res) => {
 
   // The spreadsheet dialog, so its two states can be looked at without
   // deploying: /setup shows the instructions, /setup?url=... the finished link.
+  // The update dialog, so its three states can be looked at without deploying:
+  // /update shows "up to date", ?newer=1 shows an available update.
+  if (url.pathname === '/update') {
+    const page = (await readFile(join(SRC, 'update.html'), 'utf8'))
+      .replace('google.script.run', 'window.__stub')
+      .replace(
+        '<script>',
+        `<script>
+  var __newer = ${JSON.stringify(url.searchParams.get('newer') === '1')};
+  window.__stub = {
+    withSuccessHandler(fn) { this._ok = fn; return this; },
+    withFailureHandler(fn) { this._no = fn; return this; },
+    apiUpdateStatus() {
+      this._ok({
+        build: '2026-01-01T00:00:00Z', commit: 'abc1234',
+        latest: __newer ? '2026-08-28T00:00:00Z' : '2026-01-01T00:00:00Z',
+        notes: 'Backdated bags no longer invent a day.', newer: __newer,
+        files: [{ name: 'Code.gs', where: 'the Code.gs file' },
+                { name: 'Js.html', where: 'the Js file' }],
+      });
+      return this;
+    },
+    apiUpdateFile(name) { this._ok('// stub contents of ' + name); return this; },
+  };`);
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(page);
+    return;
+  }
+
   if (url.pathname === '/setup') {
     const page = (await readFile(join(SRC, 'setup.html'), 'utf8'))
-      .split('__APP_URL__').join(url.searchParams.get('url') || '');
+      .split('__APP_URL__').join(url.searchParams.get('url') || '')
+      .split('__BUILD__').join('2026-08-28T21:50:53Z');
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(page);
     return;

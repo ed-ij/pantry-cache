@@ -11,14 +11,17 @@ const SETUP_VERSION = '2';
 
 let SS_ = null;
 
+/**
+ * The script is bound to the spreadsheet, so the active one is always the right
+ * one. There used to be an openById fallback for the unbound case, which the
+ * architecture says never happens — and keeping it forced the inferred OAuth
+ * scope up to "every spreadsheet you own". The manifest now asks for
+ * spreadsheets.currentonly, under which openById would not work anyway.
+ */
 function spreadsheet_() {
   if (SS_) return SS_;
   SS_ = SpreadsheetApp.getActiveSpreadsheet();
-  if (!SS_) {
-    const id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
-    if (!id) throw new Error('This script is not attached to a spreadsheet.');
-    SS_ = SpreadsheetApp.openById(id);
-  }
+  if (!SS_) throw new Error('This script is not attached to a spreadsheet.');
   return SS_;
 }
 
@@ -256,6 +259,7 @@ function onOpen() {
     .createMenu('Freezer Log')
     .addItem('Open the app / get my link', 'showSetup')
     .addItem('Set up / repair sheets', 'setupSheets')
+    .addItem('Check for updates', 'showUpdate')
     .addToUi();
 }
 
@@ -288,10 +292,77 @@ function showSetup() {
   DB.ensure();
   const html = HtmlService.createHtmlOutputFromFile('Setup')
     .getContent()
-    .split('__APP_URL__').join(appUrl_());
+    .split('__APP_URL__').join(appUrl_())
+    .split('__BUILD__').join(BUILD);
 
   SpreadsheetApp.getUi().showModalDialog(
     HtmlService.createHtmlOutput(html).setWidth(560).setHeight(600),
     'Freezer Log',
+  );
+}
+
+/* ------------------------------------------------------------------ updates */
+
+/**
+ * Every household runs its own copy of this code, pasted in by hand. That is
+ * what makes each one independent — constraint 11 — and it is also why a fix
+ * used to reach people as five files in an email, with nothing recording who
+ * was running what.
+ *
+ * So each copy pulls rather than being pushed to: it asks a small JSON file on
+ * GitHub what the current build is, compares it against its own stamp, and if
+ * there is something newer, shows the files to paste. Nothing updates itself.
+ * A bad release still cannot reach anyone's freezer list without them choosing
+ * to take it, so independence survives intact.
+ */
+const RELEASE_FILES = [
+  { name: 'Code.gs', path: 'dist/Code.gs', where: 'the Code.gs file' },
+  { name: 'Index.html', path: 'dist/Index.html', where: 'the Index file' },
+  { name: 'Css.html', path: 'dist/Css.html', where: 'the Css file' },
+  { name: 'Js.html', path: 'dist/Js.html', where: 'the Js file' },
+  { name: 'Setup.html', path: 'dist/Setup.html', where: 'the Setup file' },
+  { name: 'Update.html', path: 'dist/Update.html', where: 'the Update file' },
+];
+
+function fetchText_(path) {
+  const res = UrlFetchApp.fetch(RELEASE_BASE + path, {
+    muteHttpExceptions: true,
+    followRedirects: true,
+  });
+  if (res.getResponseCode() !== 200) {
+    throw new Error('Could not reach the update server. Please try again later.');
+  }
+  return res.getContentText();
+}
+
+/** Called by the dialog. Returns what this copy is running and what is current. */
+function apiUpdateStatus() {
+  const out = { build: BUILD, commit: BUILD_COMMIT, latest: '', notes: '', newer: false };
+  let manifest;
+  try {
+    manifest = JSON.parse(fetchText_('latest.json'));
+  } catch (err) {
+    out.error = 'Could not check for updates just now. Please try again later.';
+    return out;
+  }
+  out.latest = String(manifest.build || '');
+  out.notes = String(manifest.notes || '');
+  // ISO timestamps, so a plain string comparison is the whole of the logic.
+  out.newer = !!out.latest && out.latest > BUILD;
+  out.files = RELEASE_FILES.map(function (f) { return { name: f.name, where: f.where }; });
+  return out;
+}
+
+/** Called by the dialog, one file at a time, so nothing large is fetched unasked. */
+function apiUpdateFile(name) {
+  const file = RELEASE_FILES.filter(function (f) { return f.name === name; })[0];
+  if (!file) throw new Error('No such file.');
+  return fetchText_(file.path);
+}
+
+function showUpdate() {
+  SpreadsheetApp.getUi().showModalDialog(
+    HtmlService.createHtmlOutputFromFile('Update').setWidth(620).setHeight(620),
+    'Freezer Log — updates',
   );
 }

@@ -9,6 +9,7 @@
     "build": "node build.mjs",
     "test": "node dev/smoke.mjs",
     "export": "node tools/export-csv.mjs",
-    "import": "node tools/import-sheet.mjs"
+    "import": "node tools/import-sheet.mjs",
+    "release": "node tools/release.mjs"
   }
 }
