@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# Node (belt and braces — this project has no dependencies)
+node_modules/
+
+# Local dev store — recreated from dev/seed.json when deleted
+dev/data.json
+
+# Written by `npm run import` from the real spreadsheet
+dev/import/

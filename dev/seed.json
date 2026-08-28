@@ -1,0 +1,1080 @@
+{
+  "Freezers": [
+    {
+      "Name": "Kitchen",
+      "Where": "Fridge-freezer, top drawer",
+      "Colour": "#2f7fd0"
+    },
+    {
+      "Name": "Garage",
+      "Where": "Big chest freezer",
+      "Colour": "#2c8f68"
+    },
+    {
+      "Name": "Utility",
+      "Where": "Upright by the back door",
+      "Colour": "#c0632a"
+    }
+  ],
+  "Items": [
+    {
+      "Item": "Raspberries",
+      "Category": "Fruit",
+      "Typical weight (g)": 500,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Blackcurrants",
+      "Category": "Fruit",
+      "Typical weight (g)": 500,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Redcurrants",
+      "Category": "Fruit",
+      "Typical weight (g)": 400,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Gooseberries",
+      "Category": "Fruit",
+      "Typical weight (g)": 750,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Blackberries",
+      "Category": "Fruit",
+      "Typical weight (g)": 500,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Rhubarb",
+      "Category": "Fruit",
+      "Typical weight (g)": 1000,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Plums",
+      "Category": "Fruit",
+      "Typical weight (g)": 750,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Stewed apple",
+      "Category": "Prepared",
+      "Typical weight (g)": 500,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Runner beans",
+      "Category": "Vegetables",
+      "Typical weight (g)": 400,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Broad beans",
+      "Category": "Vegetables",
+      "Typical weight (g)": 500,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Peas",
+      "Category": "Vegetables",
+      "Typical weight (g)": 500,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Sweetcorn",
+      "Category": "Vegetables",
+      "Typical weight (g)": 900,
+      "Typical count": 6,
+      "Unit": "cobs"
+    },
+    {
+      "Item": "Spinach",
+      "Category": "Vegetables",
+      "Typical weight (g)": 250,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Kale",
+      "Category": "Vegetables",
+      "Typical weight (g)": 300,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Courgette",
+      "Category": "Vegetables",
+      "Typical weight (g)": 500,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Leeks",
+      "Category": "Vegetables",
+      "Typical weight (g)": 400,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Tomato sauce",
+      "Category": "Prepared",
+      "Typical weight (g)": 600,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Leek and potato soup",
+      "Category": "Prepared",
+      "Typical weight (g)": 700,
+      "Typical count": 2,
+      "Unit": "portions"
+    },
+    {
+      "Item": "Basil pesto",
+      "Category": "Herbs",
+      "Typical weight (g)": 150,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Parsley",
+      "Category": "Herbs",
+      "Typical weight (g)": 100,
+      "Typical count": "",
+      "Unit": ""
+    },
+    {
+      "Item": "Globe artichokes",
+      "Category": "Vegetables",
+      "Typical weight (g)": "",
+      "Typical count": 4,
+      "Unit": "heads"
+    }
+  ],
+  "Inventory": [
+    {
+      "ID": "LMT17T2DA",
+      "Item": "Raspberries",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2025-07-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17T352",
+      "Item": "Raspberries",
+      "Category": "Fruit",
+      "Freezer": "Kitchen",
+      "Weight (g)": 500,
+      "Date In": "2025-08-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17T3WU",
+      "Item": "Raspberries",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2026-07-17",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17T4OM",
+      "Item": "Raspberries",
+      "Category": "Fruit",
+      "Freezer": "Kitchen",
+      "Weight (g)": 500,
+      "Date In": "2025-07-24",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17T5GE",
+      "Item": "Raspberries",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2025-08-07",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17T686",
+      "Item": "Raspberries",
+      "Category": "Fruit",
+      "Freezer": "Kitchen",
+      "Weight (g)": 500,
+      "Date In": "2026-07-14",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17T7RQ",
+      "Item": "Blackcurrants",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2025-07-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17T8JI",
+      "Item": "Blackcurrants",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2026-07-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17T9BA",
+      "Item": "Blackcurrants",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2025-07-17",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TA32",
+      "Item": "Blackcurrants",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2026-07-24",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TAUU",
+      "Item": "Blackcurrants",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2025-07-07",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TCEE",
+      "Item": "Redcurrants",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 400,
+      "Date In": "2025-07-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TD66",
+      "Item": "Redcurrants",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 400,
+      "Date In": "2025-07-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TDXY",
+      "Item": "Gooseberries",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 750,
+      "Date In": "2025-06-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TEPQ",
+      "Item": "Gooseberries",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 750,
+      "Date In": "2026-06-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TFHI",
+      "Item": "Gooseberries",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 750,
+      "Date In": "2025-06-17",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TG9A",
+      "Item": "Blackberries",
+      "Category": "Fruit",
+      "Freezer": "Utility",
+      "Weight (g)": 500,
+      "Date In": "2025-09-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TH12",
+      "Item": "Blackberries",
+      "Category": "Fruit",
+      "Freezer": "Utility",
+      "Weight (g)": 500,
+      "Date In": "2025-09-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17THSU",
+      "Item": "Blackberries",
+      "Category": "Fruit",
+      "Freezer": "Utility",
+      "Weight (g)": 500,
+      "Date In": "2025-09-17",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TIKM",
+      "Item": "Blackberries",
+      "Category": "Fruit",
+      "Freezer": "Utility",
+      "Weight (g)": 500,
+      "Date In": "2025-09-24",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TJCE",
+      "Item": "Rhubarb",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 1000,
+      "Date In": "2026-04-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TK46",
+      "Item": "Rhubarb",
+      "Category": "Fruit",
+      "Freezer": "Utility",
+      "Weight (g)": 1000,
+      "Date In": "2026-05-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TKVY",
+      "Item": "Rhubarb",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 1000,
+      "Date In": "2026-04-17",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TLNQ",
+      "Item": "Rhubarb",
+      "Category": "Fruit",
+      "Freezer": "Utility",
+      "Weight (g)": 1000,
+      "Date In": "2026-05-24",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TMFI",
+      "Item": "Rhubarb",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 1000,
+      "Date In": "2026-04-07",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TNZ2",
+      "Item": "Plums",
+      "Category": "Fruit",
+      "Freezer": "Utility",
+      "Weight (g)": 750,
+      "Date In": "2025-08-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TOQU",
+      "Item": "Plums",
+      "Category": "Fruit",
+      "Freezer": "Utility",
+      "Weight (g)": 750,
+      "Date In": "2025-08-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TPIM",
+      "Item": "Plums",
+      "Category": "Fruit",
+      "Freezer": "Utility",
+      "Weight (g)": 750,
+      "Date In": "2025-08-17",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TQAE",
+      "Item": "Stewed apple",
+      "Category": "Prepared",
+      "Freezer": "Utility",
+      "Weight (g)": 500,
+      "Date In": "2025-10-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TR26",
+      "Item": "Stewed apple",
+      "Category": "Prepared",
+      "Freezer": "Utility",
+      "Weight (g)": 500,
+      "Date In": "2025-10-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TRTY",
+      "Item": "Stewed apple",
+      "Category": "Prepared",
+      "Freezer": "Utility",
+      "Weight (g)": 500,
+      "Date In": "2025-10-17",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TSLQ",
+      "Item": "Stewed apple",
+      "Category": "Prepared",
+      "Freezer": "Utility",
+      "Weight (g)": 500,
+      "Date In": "2025-10-24",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TTDI",
+      "Item": "Runner beans",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 400,
+      "Date In": "2025-08-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TU5A",
+      "Item": "Runner beans",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 400,
+      "Date In": "2025-09-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TUX2",
+      "Item": "Runner beans",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 400,
+      "Date In": "2025-08-17",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TVOU",
+      "Item": "Runner beans",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 400,
+      "Date In": "2025-09-24",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TWGM",
+      "Item": "Runner beans",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 400,
+      "Date In": "2025-08-07",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TX8E",
+      "Item": "Runner beans",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 400,
+      "Date In": "2025-09-14",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TYRY",
+      "Item": "Broad beans",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2026-06-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TZJQ",
+      "Item": "Broad beans",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2026-06-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17U0BI",
+      "Item": "Broad beans",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2026-06-17",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17U13A",
+      "Item": "Broad beans",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2026-06-24",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17U1V2",
+      "Item": "Peas",
+      "Category": "Vegetables",
+      "Freezer": "Kitchen",
+      "Weight (g)": 500,
+      "Date In": "2026-06-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17U2MU",
+      "Item": "Peas",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2026-07-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17U3EM",
+      "Item": "Peas",
+      "Category": "Vegetables",
+      "Freezer": "Kitchen",
+      "Weight (g)": 500,
+      "Date In": "2026-06-17",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17U46E",
+      "Item": "Peas",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2026-07-24",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17U4Y6",
+      "Item": "Peas",
+      "Category": "Vegetables",
+      "Freezer": "Kitchen",
+      "Weight (g)": 500,
+      "Date In": "2026-06-07",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17U6HQ",
+      "Item": "Sweetcorn",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 900,
+      "Date In": "2025-09-03",
+      "Note": "",
+      "Count": 6,
+      "Unit": "cobs"
+    },
+    {
+      "ID": "LMT17U79I",
+      "Item": "Sweetcorn",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 900,
+      "Date In": "2025-09-10",
+      "Note": "",
+      "Count": 6,
+      "Unit": "cobs"
+    },
+    {
+      "ID": "LMT17U81A",
+      "Item": "Sweetcorn",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 900,
+      "Date In": "2025-09-17",
+      "Note": "",
+      "Count": 6,
+      "Unit": "cobs"
+    },
+    {
+      "ID": "LMT17U8T2",
+      "Item": "Spinach",
+      "Category": "Vegetables",
+      "Freezer": "Kitchen",
+      "Weight (g)": 250,
+      "Date In": "2026-05-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17U9KU",
+      "Item": "Spinach",
+      "Category": "Vegetables",
+      "Freezer": "Kitchen",
+      "Weight (g)": 250,
+      "Date In": "2026-05-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UACM",
+      "Item": "Spinach",
+      "Category": "Vegetables",
+      "Freezer": "Kitchen",
+      "Weight (g)": 250,
+      "Date In": "2026-05-17",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UB4E",
+      "Item": "Kale",
+      "Category": "Vegetables",
+      "Freezer": "Utility",
+      "Weight (g)": 300,
+      "Date In": "2026-02-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UBW6",
+      "Item": "Kale",
+      "Category": "Vegetables",
+      "Freezer": "Utility",
+      "Weight (g)": 300,
+      "Date In": "2026-02-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UCNY",
+      "Item": "Courgette",
+      "Category": "Vegetables",
+      "Freezer": "Utility",
+      "Weight (g)": 500,
+      "Date In": "2025-08-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UDFQ",
+      "Item": "Courgette",
+      "Category": "Vegetables",
+      "Freezer": "Utility",
+      "Weight (g)": 500,
+      "Date In": "2025-08-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UE7I",
+      "Item": "Courgette",
+      "Category": "Vegetables",
+      "Freezer": "Utility",
+      "Weight (g)": 500,
+      "Date In": "2025-08-17",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UEZA",
+      "Item": "Leeks",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 400,
+      "Date In": "2026-03-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UFR2",
+      "Item": "Leeks",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 400,
+      "Date In": "2026-03-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UGIU",
+      "Item": "Tomato sauce",
+      "Category": "Prepared",
+      "Freezer": "Kitchen",
+      "Weight (g)": 600,
+      "Date In": "2025-09-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UHAM",
+      "Item": "Tomato sauce",
+      "Category": "Prepared",
+      "Freezer": "Utility",
+      "Weight (g)": 600,
+      "Date In": "2025-10-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UI2E",
+      "Item": "Tomato sauce",
+      "Category": "Prepared",
+      "Freezer": "Kitchen",
+      "Weight (g)": 600,
+      "Date In": "2025-09-17",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UIU6",
+      "Item": "Tomato sauce",
+      "Category": "Prepared",
+      "Freezer": "Utility",
+      "Weight (g)": 600,
+      "Date In": "2025-10-24",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UJLY",
+      "Item": "Tomato sauce",
+      "Category": "Prepared",
+      "Freezer": "Kitchen",
+      "Weight (g)": 600,
+      "Date In": "2025-09-07",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UL5I",
+      "Item": "Leek and potato soup",
+      "Category": "Prepared",
+      "Freezer": "Utility",
+      "Weight (g)": 700,
+      "Date In": "2026-03-03",
+      "Note": "",
+      "Count": 2,
+      "Unit": "portions"
+    },
+    {
+      "ID": "LMT17ULXA",
+      "Item": "Leek and potato soup",
+      "Category": "Prepared",
+      "Freezer": "Utility",
+      "Weight (g)": 700,
+      "Date In": "2026-03-10",
+      "Note": "",
+      "Count": 2,
+      "Unit": "portions"
+    },
+    {
+      "ID": "LMT17UMP2",
+      "Item": "Leek and potato soup",
+      "Category": "Prepared",
+      "Freezer": "Utility",
+      "Weight (g)": 700,
+      "Date In": "2026-03-17",
+      "Note": "",
+      "Count": 2,
+      "Unit": "portions"
+    },
+    {
+      "ID": "LMT17UNGU",
+      "Item": "Basil pesto",
+      "Category": "Herbs",
+      "Freezer": "Kitchen",
+      "Weight (g)": 150,
+      "Date In": "2025-08-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UO8M",
+      "Item": "Basil pesto",
+      "Category": "Herbs",
+      "Freezer": "Kitchen",
+      "Weight (g)": 150,
+      "Date In": "2025-08-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UP0E",
+      "Item": "Basil pesto",
+      "Category": "Herbs",
+      "Freezer": "Kitchen",
+      "Weight (g)": 150,
+      "Date In": "2025-08-17",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UPS6",
+      "Item": "Basil pesto",
+      "Category": "Herbs",
+      "Freezer": "Kitchen",
+      "Weight (g)": 150,
+      "Date In": "2025-08-24",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UQJY",
+      "Item": "Parsley",
+      "Category": "Herbs",
+      "Freezer": "Kitchen",
+      "Weight (g)": 100,
+      "Date In": "2026-05-03",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17URBQ",
+      "Item": "Parsley",
+      "Category": "Herbs",
+      "Freezer": "Kitchen",
+      "Weight (g)": 100,
+      "Date In": "2026-05-10",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17US3I",
+      "Item": "Globe artichokes",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": "",
+      "Date In": "2026-07-03",
+      "Note": "",
+      "Count": 4,
+      "Unit": "heads"
+    },
+    {
+      "ID": "LMT17USVA",
+      "Item": "Globe artichokes",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": "",
+      "Date In": "2026-07-10",
+      "Note": "",
+      "Count": 4,
+      "Unit": "heads"
+    }
+  ],
+  "History": [
+    {
+      "ID": "LMT17T6ZY",
+      "Item": "Raspberries",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2025-07-05",
+      "Date Out": "2026-08-02",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TBMM",
+      "Item": "Blackcurrants",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 500,
+      "Date In": "2025-07-05",
+      "Date Out": "2026-08-02",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TN7A",
+      "Item": "Rhubarb",
+      "Category": "Fruit",
+      "Freezer": "Garage",
+      "Weight (g)": 1000,
+      "Date In": "2026-04-05",
+      "Date Out": "2026-08-02",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17TY06",
+      "Item": "Runner beans",
+      "Category": "Vegetables",
+      "Freezer": "Garage",
+      "Weight (g)": 400,
+      "Date In": "2025-08-05",
+      "Date Out": "2026-08-02",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17U5PY",
+      "Item": "Peas",
+      "Category": "Vegetables",
+      "Freezer": "Kitchen",
+      "Weight (g)": 500,
+      "Date In": "2026-06-05",
+      "Date Out": "2026-08-02",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    },
+    {
+      "ID": "LMT17UKDQ",
+      "Item": "Tomato sauce",
+      "Category": "Prepared",
+      "Freezer": "Kitchen",
+      "Weight (g)": 600,
+      "Date In": "2025-09-05",
+      "Date Out": "2026-08-02",
+      "Note": "",
+      "Count": "",
+      "Unit": ""
+    }
+  ]
+}

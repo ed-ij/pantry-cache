@@ -1,0 +1,1707 @@
+<script>
+/* ==========================================================================
+   Freezer Log — client.
+
+   Talks to Apps Script via google.script.run when deployed, and to the local
+   dev server over fetch when running `npm run dev`. Everything renders from a
+   single `S` state object.
+
+   Writes are applied to that state only once the sheet has confirmed them, so
+   what is on screen is always what is in the spreadsheet. The cost is that a
+   dropped connection means the action simply does not happen — nothing is
+   queued and nothing syncs later — so it has to say so plainly.
+   ========================================================================== */
+
+/* ------------------------------------------------------------ transport */
+
+function api(fn, arg) {
+  return new Promise(function (resolve, reject) {
+    if (window.google && window.google.script && window.google.script.run) {
+      window.google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(function (err) { reject(new Error(err && err.message ? err.message : String(err))); })
+        [fn](arg);
+      return;
+    }
+    fetch('/api/' + fn, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(arg === undefined ? null : arg),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { return d.error ? reject(new Error(d.error)) : resolve(d.result); })
+      .catch(reject);
+  });
+}
+
+/* -------------------------------------------------------------- helpers */
+
+var $ = function (sel) { return document.querySelector(sel); };
+
+function esc(s) {
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function fmtW(g) {
+  g = Math.round(Number(g) || 0);
+  if (g < 1000) return g + ' g';
+  return (g / 1000).toFixed(2).replace(/\.?0+$/, '') + ' kg';
+}
+
+function parseISO(iso) {
+  var p = String(iso || '').split('-');
+  return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+}
+
+function todayISO() {
+  var d = new Date();
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return parseISO(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function fmtMonth(iso) {
+  if (!iso) return '—';
+  return parseISO(iso).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+}
+
+function ageText(iso) {
+  if (!iso) return '';
+  var days = Math.round((parseISO(S.today) - parseISO(iso)) / 86400000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 31) return days + ' days ago';
+  var a = parseISO(iso), b = parseISO(S.today);
+  var m = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+  if (b.getDate() < a.getDate()) m -= 1;
+  if (m < 12) return m + ' month' + (m === 1 ? '' : 's') + ' ago';
+  var y = Math.floor(m / 12), r = m % 12;
+  return y + ' year' + (y === 1 ? '' : 's') + (r ? ' ' + r + ' mth' : '') + ' ago';
+}
+
+function norm(s) { return String(s || '').trim().toLowerCase(); }
+
+var GRAMS_PER_OZ = 28.349523125;
+
+/** The two step sizes offered either side of a readout. */
+var WEIGHT_STEPS = [50, 10];
+var COUNT_STEPS = [5, 1];
+
+/** "6 cobs", dropped back to the singular for one: one box, not one boxe. */
+function fmtCount(n, unit) {
+  n = Math.round(Number(n) || 0);
+  var word = String(unit || 'pieces').trim() || 'pieces';
+  if (n === 1) {
+    if (/(x|s|ch|sh)es$/i.test(word)) word = word.slice(0, -2);
+    else if (/ies$/i.test(word)) word = word.slice(0, -3) + 'y';
+    else if (/s$/i.test(word) && !/ss$/i.test(word)) word = word.slice(0, -1);
+  }
+  return n + ' ' + word;
+}
+
+/** How big one bag is, in whichever measures were recorded for it. */
+function lotSize(lot) {
+  var parts = [];
+  if (lot.count > 0) parts.push(fmtCount(lot.count, lot.unit));
+  if (lot.weightG > 0) parts.push(fmtW(lot.weightG));
+  return parts.join(' \u00b7 ') || '—';
+}
+
+/** The same, totalled over a set of bags. */
+/**
+ * Totals a set of bags, as an array of measures. Counts only add up when they
+ * are counting the same thing — six cobs plus four heads is not ten of anything
+ * — so mixed units are listed side by side rather than merged or dropped.
+ * The first entry is the headline; callers show as much of the rest as fits.
+ */
+function lotsSize(lots, weightFirst) {
+  var byUnit = {};
+  lots.forEach(function (l) {
+    if (!(l.count > 0)) return;
+    var key = norm(l.unit) || 'pieces';
+    if (!byUnit[key]) byUnit[key] = { unit: l.unit || 'pieces', total: 0 };
+    byUnit[key].total += l.count;
+  });
+
+  var counts = Object.keys(byUnit)
+    .map(function (k) { return byUnit[k]; })
+    .sort(function (a, b) { return b.total - a.total; })
+    .map(function (u) { return fmtCount(u.total, u.unit); });
+
+  var w = sum(lots, function (l) { return l.weightG; });
+  var weight = w > 0 ? [fmtW(w)] : [];
+
+  var parts = weightFirst ? weight.concat(counts) : counts.concat(weight);
+  return parts.length ? parts : ['—'];
+}
+
+/** Mirrors the backend's cleanName so the screen shows exactly what gets saved. */
+function tidyName(s) {
+  var v = String(s || '').trim().replace(/\s+/g, ' ');
+  return v ? v.charAt(0).toUpperCase() + v.slice(1) : '';
+}
+
+function sum(list, pick) {
+  return list.reduce(function (t, x) { return t + (pick ? pick(x) : x); }, 0);
+}
+
+function groupBy(list, key) {
+  var out = {};
+  list.forEach(function (x) {
+    var k = key(x);
+    (out[k] = out[k] || []).push(x);
+  });
+  return out;
+}
+
+/* ---------------------------------------------------------------- state */
+
+var BLANK_DRAFT = {
+  item: '', category: '', weightG: 500, count: 0, unit: '', qty: 1,
+  freezer: '', dateIn: '', note: '', showNote: false, showCount: false,
+};
+
+/** Words that come up often enough to be worth one tap. */
+var UNIT_SUGGESTIONS = ['cobs', 'portions', 'pieces', 'heads', 'bunches', 'sticks'];
+
+/**
+ * The suggestions, with whatever word is already in use added at the front if
+ * it is not among them — otherwise a bag of "blocks" shows no chip selected
+ * and every chip looks like a change.
+ */
+function unitChoices(current) {
+  var c = norm(current);
+  if (c && UNIT_SUGGESTIONS.indexOf(c) < 0) return [current].concat(UNIT_SUGGESTIONS);
+  return UNIT_SUGGESTIONS;
+}
+
+var S = {
+  ready: false,
+  tab: 'add',
+  today: todayISO(),
+  freezers: [],
+  items: [],
+  categories: [],
+  inventory: [],
+  sheetUrl: '',
+
+  query: '',
+  draft: Object.assign({}, BLANK_DRAFT),
+  recentAdds: [],
+  recentTakes: [],
+
+  openCats: {},
+
+  viewMode: 'item',
+  viewFreezer: 'all',
+  viewSearch: '',
+  viewLimit: 60,
+  open: {},
+
+  takeFreezer: 'all',
+  takeSearch: '',
+  takeLimit: 40,
+
+  modal: null,
+  toast: null,
+  busy: false,
+  offline: navigator.onLine === false,
+};
+
+var toastTimer = null;
+
+function setState(patch) {
+  Object.assign(S, patch);
+  render();
+}
+
+/**
+ * The sheet holds one colour per freezer. Rather than asking for a second one
+ * that works on a dark background, the stored value is handed to CSS as a
+ * custom property and the dark theme lightens it there — so whatever colour
+ * gets typed into the spreadsheet stays legible either way.
+ */
+function dot(colour) {
+  return '<span class="dot" style="--fz:' + esc(colour) + '"></span>';
+}
+
+function freezerColour(name) {
+  var f = S.freezers.filter(function (x) { return x.name === name; })[0];
+  return f ? f.colour : 'var(--ink-3)';
+}
+
+/* ---------------------------------------------------------------- toast */
+
+function toast(msg, undoToken, kind) {
+  clearTimeout(toastTimer);
+  S.toast = { msg: msg, undo: undoToken || null, kind: kind || '' };
+  render();
+  toastTimer = setTimeout(function () {
+    S.toast = null;
+    render();
+  }, undoToken ? 30000 : (kind === 'bad' ? 9000 : 4500));
+}
+
+/**
+ * Backend errors are already written for a person ("Please choose a freezer").
+ * A dropped connection is not — it arrives as "Failed to fetch" or similar,
+ * which tells the reader nothing, so it gets translated.
+ */
+function isOffline(err) {
+  if (navigator.onLine === false) return true;
+  var msg = String((err && err.message) || err || '');
+  return /failed to fetch|networkerror|network error|load failed|net::|timed? ?out/i.test(msg);
+}
+
+function fail(err) {
+  if (isOffline(err)) {
+    toast('No connection, so that was not saved. Try again once the wi-fi is back.', null, 'bad');
+    return;
+  }
+  toast((err && err.message) || 'Something went wrong.', null, 'bad');
+}
+
+/* --------------------------------------------------------------- render */
+
+function render() {
+  var active = document.activeElement;
+  var focusId = active && active.id ? active.id : null;
+  var selStart = focusId && 'selectionStart' in active ? active.selectionStart : null;
+
+  $('#topbar-right').innerHTML = renderTopRight();
+  $('#tabbar').innerHTML = renderTabs();
+  $('#panel').innerHTML = S.ready ? renderPanel() : renderLoading();
+  $('#toast-host').innerHTML = renderToast();
+  $('#modal-host').innerHTML = renderModal();
+
+  if (focusId) {
+    var again = document.getElementById(focusId);
+    if (again) {
+      again.focus();
+      if (selStart !== null && 'setSelectionRange' in again) {
+        try { again.setSelectionRange(selStart, selStart); } catch (e) { /* not a text input */ }
+      }
+    }
+  }
+}
+
+function renderLoading() {
+  return '<div class="stack">' +
+    '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>' +
+    '</div>';
+}
+
+function renderTopRight() {
+  var total = sum(S.inventory, function (l) { return l.weightG; });
+  if (!S.ready) return '';
+  if (S.offline) {
+    return '<span class="badge badge-warm">Offline &mdash; cannot save</span>' +
+      '<button class="btn btn-ghost" style="min-height:2.6rem;padding:0 12px" data-act="refresh" title="Try again">&#8635;</button>';
+  }
+  return '<span class="badge">' + esc(fmtW(total)) + ' stored</span>' +
+    '<button class="btn btn-ghost" style="min-height:2.6rem;padding:0 12px" data-act="refresh" title="Reload from the spreadsheet">&#8635;</button>';
+}
+
+var TABS = [
+  { id: 'add', icon: '&#43;', label: 'Put in' },
+  { id: 'view', icon: '&#9776;', label: 'In the freezers' },
+  { id: 'take', icon: '&#8722;', label: 'Take out' },
+];
+
+function renderTabs() {
+  return TABS.map(function (t) {
+    var on = S.tab === t.id;
+    return '<button class="tab' + (on ? ' is-active' : '') + (on && t.id === 'take' ? ' is-warm' : '') + '" ' +
+      'data-act="tab" data-tab="' + t.id + '" aria-label="' + t.label + '" aria-current="' + (on ? 'page' : 'false') + '">' +
+      '<span class="tab-icon" aria-hidden="true">' + t.icon + '</span>' +
+      '<span class="tab-label">' + t.label + '</span></button>';
+  }).join('');
+}
+
+function renderPanel() {
+  if (S.tab === 'add') return renderAdd();
+  if (S.tab === 'view') return renderView();
+  return renderTake();
+}
+
+/* ------------------------------------------------------------------ ADD */
+
+function matchItems(q) {
+  var n = norm(q);
+  if (!n) return S.items.slice(0, 10);
+  var starts = [], contains = [];
+  S.items.forEach(function (it) {
+    var k = norm(it.name);
+    if (k.indexOf(n) === 0) starts.push(it);
+    else if (k.indexOf(n) > -1) contains.push(it);
+  });
+  return starts.concat(contains).slice(0, 20);
+}
+
+function renderAdd() {
+  if (!S.draft.item) return renderAddPick();
+  return renderAddDetails();
+}
+
+/** How many tiles fill two rows of the grid at tablet width. */
+var TILES_PER_CATEGORY = 6;
+
+function renderAddPick() {
+  var q = S.query.trim();
+  return '<div class="stack">' +
+    '<div>' +
+      '<label class="label" for="q-item">What are you putting in the freezer?</label>' +
+      '<input class="input input-hero" id="q-item" type="text" autocomplete="off" ' +
+        'placeholder="Type a name&hellip;" value="' + esc(S.query) + '" data-act="query">' +
+    '</div>' +
+    (q ? renderAddSearch(q) : renderAddBrowse()) +
+    renderRecentAdds() +
+    '</div>';
+}
+
+/** One item as a grid tile: the name, and what is already in the freezers. */
+function itemTile(it) {
+  var inStock = S.inventory.filter(function (l) { return norm(l.item) === norm(it.name); });
+  var meta = inStock.length
+    ? lotsSize(inStock)[0] + ' &middot; ' + inStock.length + (inStock.length === 1 ? ' bag' : ' bags')
+    : 'none in';
+  return '<button class="tile' + (inStock.length ? '' : ' is-empty') + '" data-act="pick-item" ' +
+    'data-name="' + esc(it.name) + '" data-category="' + esc(it.category) + '" data-typical="' + (it.typicalG || 0) + '" ' +
+    'data-count="' + (it.typicalCount || 0) + '" data-unit="' + esc(it.unit || '') + '">' +
+    '<span class="tile-name">' + esc(it.name) + '</span>' +
+    '<span class="tile-meta">' + meta + '</span></button>';
+}
+
+/**
+ * Browsing view: items grouped by category, both the categories and the items
+ * inside them ordered by how often they are used, so the things she reaches for
+ * most are the ones under her thumb. Each category shows two rows before
+ * offering the rest, which keeps the whole catalogue to a screen or two.
+ */
+function renderAddBrowse() {
+  if (!S.items.length) {
+    return '<div class="empty"><span class="empty-mark">&#127811;</span>' +
+      'Start typing what you have picked &mdash; raspberries, runner beans, rhubarb&hellip;</div>';
+  }
+
+  var byCat = {};
+  // S.items arrives sorted by use, so each bucket keeps that order.
+  S.items.forEach(function (it) {
+    (byCat[it.category] = byCat[it.category] || []).push(it);
+  });
+
+  var cats = Object.keys(byCat).sort(function (a, b) {
+    var ua = sum(byCat[a], function (it) { return it.uses; });
+    var ub = sum(byCat[b], function (it) { return it.uses; });
+    return ub - ua || byCat[b].length - byCat[a].length || a.localeCompare(b);
+  });
+
+  return cats.map(function (cat) {
+    var all = byCat[cat];
+    var expanded = !!S.openCats[cat];
+    // When there is an overflow tile it has to live inside the two rows too,
+    // so it takes the last slot rather than spilling onto a third row.
+    var cap = all.length > TILES_PER_CATEGORY ? TILES_PER_CATEGORY - 1 : TILES_PER_CATEGORY;
+    var shown = expanded ? all : all.slice(0, cap);
+    var hidden = all.length - shown.length;
+
+    var tiles = shown.map(itemTile).join('');
+    if (hidden > 0) {
+      tiles += '<button class="tile tile-more" data-act="more-cat" data-cat="' + esc(cat) + '">' +
+        '&#43; ' + hidden + ' more</button>';
+    } else if (expanded && all.length > TILES_PER_CATEGORY) {
+      tiles += '<button class="tile tile-more" data-act="more-cat" data-cat="' + esc(cat) + '">Show fewer</button>';
+    }
+
+    return '<div class="cat-head"><span class="cat-name">' + esc(cat) + '</span>' +
+      '<span class="cat-count">' + all.length + '</span></div>' +
+      '<div class="tile-grid">' + tiles + '</div>';
+  }).join('');
+}
+
+/** Searching flattens the categories — a match is a match, wherever it lives. */
+function renderAddSearch(q) {
+  var matches = matchItems(q);
+  var exact = S.items.some(function (it) { return norm(it.name) === norm(q); });
+
+  var newTile = !exact
+    ? '<button class="tile tile-new" data-act="new-item" data-name="' + esc(q) + '">' +
+      '<span class="tile-name">&#43; ' + esc(tidyName(q)) + '</span>' +
+      '<span class="tile-meta">something new</span></button>'
+    : '';
+
+  if (!matches.length && !newTile) return '';
+  return '<div class="tile-grid">' + newTile + matches.map(itemTile).join('') + '</div>';
+}
+
+function countFreezers(lots) {
+  var names = {};
+  lots.forEach(function (l) { names[l.freezer] = 1; });
+  var list = Object.keys(names);
+  return list.length === 1 ? list[0] : list.length + ' freezers';
+}
+
+function renderAddDetails() {
+  var d = S.draft;
+  var canSave = d.item && d.freezer && (d.weightG > 0 || d.count > 0) && !S.busy;
+
+  var weightChips = [100, 250, 500, 1000, 2000].map(function (g) {
+    return '<button class="chip' + (d.weightG === g ? ' is-on' : '') + '" data-act="set-weight" data-g="' + g + '">' + fmtW(g) + '</button>';
+  }).join('');
+
+  var freezerBtns = S.freezers.map(function (f) {
+    return '<button class="chip' + (d.freezer === f.name ? ' is-on' : '') + '" data-act="set-freezer" data-name="' + esc(f.name) + '">' +
+      dot(f.colour) + esc(f.name) + '</button>';
+  }).join('');
+
+  var dateLabel = d.dateIn === S.today ? 'Today &middot; ' + esc(fmtDate(d.dateIn)) : esc(fmtDate(d.dateIn));
+
+  return '<div class="stack">' +
+
+    '<div class="card">' +
+      '<div class="row">' +
+        '<div class="spacer">' +
+          '<div style="font-size:1.6rem;font-weight:800;letter-spacing:-.03em">' + esc(d.item) + '</div>' +
+          '<div class="badge" style="margin-top:6px">' + esc(d.category) + '</div>' +
+        '</div>' +
+        '<button class="btn btn-ghost" data-act="clear-item">Change</button>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="card stack">' +
+      '<div><span class="label">How much in each bag or tub?</span>' +
+        (d.weightG > 0
+          ? stepControl(d.weightG, { steps: WEIGHT_STEPS, fmt: fmtW, noun: 'grams', bump: 'bump-weight', type: 'type-weight' })
+          : '<div class="not-set">Not weighed <button class="btn btn-ghost" data-act="set-weight" data-g="500">Add a weight</button></div>') +
+        '<div class="chips" style="margin-top:10px">' + weightChips +
+          (d.weightG > 0 && d.count > 0
+            ? '<button class="chip" data-act="set-weight" data-g="0">Don&rsquo;t weigh it</button>'
+            : '') +
+        '</div>' +
+      '</div>' +
+
+      '<div>' + (d.showCount
+        ? '<span class="label">How many pieces in each bag?</span>' +
+          stepControl(d.count || 1, {
+            steps: COUNT_STEPS, noun: 'pieces', bump: 'bump-count', type: 'type-count',
+            fmt: function (n) { return fmtCount(n, d.unit); },
+          }) +
+          '<div class="chips" style="margin-top:10px">' +
+            unitChoices(d.unit).map(function (u) {
+              return '<button class="chip' + (norm(d.unit) === norm(u) ? ' is-on' : '') + '" data-act="set-unit" data-unit="' + esc(u) + '">' + esc(u) + '</button>';
+            }).join('') +
+            '<button class="chip" data-act="type-unit">Something else&hellip;</button>' +
+            '<button class="chip" data-act="hide-count">Don&rsquo;t count them</button>' +
+          '</div>'
+        : '<button class="btn btn-ghost" style="padding-left:0" data-act="show-count">' +
+          '&#43; Count the pieces (cobs, portions&hellip;)</button>') +
+      '</div>' +
+
+      '<div><span class="label">How many of them?</span>' +
+        '<div class="stepper">' +
+          '<button class="stepper-btn" data-act="bump-qty" data-by="-1"' + (d.qty <= 1 ? ' disabled' : '') + '>&minus;</button>' +
+          '<div class="stepper-value">' + d.qty + '<small>' + (d.qty === 1 ? 'bag / tub' : 'bags / tubs') + '</small></div>' +
+          '<button class="stepper-btn" data-act="bump-qty" data-by="1">&plus;</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="card">' +
+      '<span class="label">Which freezer?</span>' +
+      '<div class="chips">' + freezerBtns + '</div>' +
+      (S.freezers.length ? '' : '<div class="muted small" style="margin-top:8px">No freezers listed yet &mdash; add them on the <b>Freezers</b> tab of the spreadsheet.</div>') +
+    '</div>' +
+
+    '<div class="card">' +
+      '<span class="label">Date it went in</span>' +
+      '<div class="row">' +
+        '<div class="spacer" style="font-size:1.1rem;font-weight:700">' + dateLabel + '</div>' +
+        '<button class="btn" data-act="open-date">Change date</button>' +
+      '</div>' +
+      (d.showNote
+        ? '<div style="margin-top:14px"><span class="label">Note (optional)</span>' +
+          '<input class="input" id="note-input" type="text" placeholder="e.g. from the top bed" value="' + esc(d.note) + '" data-act="note"></div>'
+        : '<button class="btn btn-ghost" style="margin-top:8px;padding-left:0" data-act="show-note">&#43; Add a note</button>') +
+    '</div>' +
+
+    '<button class="btn btn-primary btn-hero btn-block" data-act="save-add"' + (canSave ? '' : ' disabled') +
+      ' aria-label="Put ' + d.qty + ' of ' + esc(draftEach(d)) + ' ' + esc(d.item) + ' in the ' + esc(d.freezer) + ' freezer">' +
+      (S.busy ? 'Saving&hellip;' :
+        '<span>Put in the ' + esc(d.freezer || '&hellip;') + ' freezer' +
+        '<span class="btn-sub">' + esc(draftSummary(d)) + '</span></span>') +
+    '</button>' +
+
+    renderRecentAdds() +
+    '</div>';
+}
+
+/**
+ * The stepper used for weights and for counts alike. Unlabelled +/- buttons
+ * were the original complaint: you could not tell how far each press moved you.
+ * So every button states its own size, there is a coarse pair outside and a
+ * fine pair inside, and the number itself opens a keypad.
+ */
+function stepControl(value, opts) {
+  var steps = opts.steps;
+  var fmt = opts.fmt;
+  var max = opts.max || 0;
+
+  function btn(by) {
+    var over = max && by > 0 && value + by > max;
+    var under = value + by < (opts.min === undefined ? 1 : opts.min);
+    return '<button class="step-btn' + (Math.abs(by) === steps[1] ? ' step-fine' : ' step-coarse') + '" ' +
+      'data-act="' + opts.bump + '" data-by="' + by + '"' + (over || under ? ' disabled' : '') +
+      ' aria-label="' + (by > 0 ? 'Add ' : 'Take off ') + Math.abs(by) + ' ' + esc(opts.noun) + '">' +
+      (by > 0 ? '&plus;' : '&minus;') + Math.abs(by) + '</button>';
+  }
+
+  return '<div class="weigher">' +
+    btn(-steps[0]) + btn(-steps[1]) +
+    '<button class="weigher-value" data-act="' + opts.type + '" aria-label="Type an exact ' + esc(opts.noun) + '">' +
+      esc(fmt(value)) + '<small>tap to type</small></button>' +
+    btn(steps[1]) + btn(steps[0]) +
+    '</div>';
+}
+
+/** "6 cobs · 900 g" — one bag, in whichever measures are set. */
+function draftEach(d) {
+  return lotSize({ weightG: d.weightG, count: d.showCount ? d.count : 0, unit: d.unit });
+}
+
+/**
+ * One bag reads as just its size; several read as the per-bag size and the
+ * total. Both halves can contain a middle dot, so they are joined with a dash
+ * rather than another dot.
+ */
+function draftSummary(d) {
+  var each = draftEach(d);
+  if (d.qty === 1) return each;
+  var total = lotSize({
+    weightG: d.weightG * d.qty,
+    count: (d.showCount ? d.count : 0) * d.qty,
+    unit: d.unit,
+  });
+  return d.qty + ' bags of ' + each + ' \u2014 ' + total + ' in total';
+}
+
+function renderRecentAdds() {
+  if (!S.recentAdds.length) return '';
+  var rows = S.recentAdds.map(function (r, i) {
+    return '<div class="row-btn" style="cursor:default">' +
+      '<div class="row-main"><div class="row-name">' + esc(r.label) + '</div>' +
+      '<div class="row-meta">' + esc(r.sub) + '</div></div>' +
+      '<button class="btn btn-ghost" data-act="undo-recent" data-kind="add" data-i="' + i + '">Undo</button></div>';
+  }).join('');
+  return '<div class="card card-flush">' +
+    '<div class="card-head"><div class="card-title">Put in just now</div></div>' + rows + '</div>';
+}
+
+/* ----------------------------------------------------------------- VIEW */
+
+function renderView() {
+  var inv = S.inventory;
+  if (S.viewFreezer !== 'all') inv = inv.filter(function (l) { return l.freezer === S.viewFreezer; });
+  var q = norm(S.viewSearch);
+  if (q) inv = inv.filter(function (l) { return norm(l.item).indexOf(q) > -1 || norm(l.category).indexOf(q) > -1; });
+
+  var kinds = {};
+  inv.forEach(function (l) { kinds[norm(l.item)] = 1; });
+
+  // The freezer filter doubles as the per-freezer overview: each chip carries
+  // its own total, so choosing where to look and seeing what is where are the
+  // same glance.
+  var allTotal = sum(S.inventory, function (l) { return l.weightG; });
+  var chips = '<button class="chip' + (S.viewFreezer === 'all' ? ' is-on' : '') + '" data-act="view-freezer" data-name="all">' +
+    'All freezers <span class="chip-num">' + esc(fmtW(allTotal)) + '</span></button>' +
+    S.freezers.map(function (f) {
+      var t = sum(S.inventory.filter(function (l) { return l.freezer === f.name; }), function (l) { return l.weightG; });
+      return '<button class="chip' + (S.viewFreezer === f.name ? ' is-on' : '') + '" data-act="view-freezer" data-name="' + esc(f.name) + '">' +
+        dot(f.colour) + esc(f.name) +
+        ' <span class="chip-num">' + esc(fmtW(t)) + '</span></button>';
+    }).join('');
+
+  var head = '<div class="stack">' +
+    '<div class="summary">' +
+      totalStat(inv) +
+      stat(String(inv.length), inv.length === 1 ? 'Bag / tub' : 'Bags / tubs') +
+      stat(String(Object.keys(kinds).length), 'Different things') +
+    '</div>' +
+    '<div class="seg">' +
+      '<button class="seg-btn' + (S.viewMode === 'item' ? ' is-on' : '') + '" data-act="view-mode" data-mode="item">By item</button>' +
+      '<button class="seg-btn' + (S.viewMode === 'age' ? ' is-on' : '') + '" data-act="view-mode" data-mode="age">By age</button>' +
+    '</div>' +
+    '<div class="chips">' + chips + '</div>' +
+    '<input class="input" id="view-search" type="search" placeholder="Search for something&hellip;" value="' + esc(S.viewSearch) + '" data-act="view-search">';
+
+  var body = inv.length
+    ? (S.viewMode === 'age' ? renderByAge(inv) : renderByItem(inv))
+    : '<div class="empty"><span class="empty-mark">&#10052;</span>' +
+      (q || S.viewFreezer !== 'all'
+        ? 'Nothing here matches.'
+        : 'The freezers are empty. Add something on the <b>Put in</b> tab.') +
+      '</div>';
+
+  return head + body + renderSheetLink() + '</div>';
+}
+
+/**
+ * The spreadsheet is the real database, so give it a visible door: this is how
+ * you add a freezer, rename something, or fix a mistake the app cannot.
+ */
+function renderSheetLink() {
+  return '<div class="card">' +
+    '<div class="card-title">Where all this is kept</div>' +
+    '<p class="muted small" style="margin:6px 0 14px">Everything lives in a Google Sheet you can open like a spreadsheet. ' +
+    'That is where you add a new freezer, correct a date, or check back over past years.</p>' +
+    (S.sheetUrl
+      ? '<a class="btn btn-block" href="' + esc(S.sheetUrl) + '" target="_blank" rel="noopener">Open the spreadsheet</a>'
+      : '<div class="muted small">(The link appears once the app is running from the spreadsheet.)</div>') +
+    '</div>';
+}
+
+function stat(num, label, sub) {
+  return '<div class="stat"><div class="stat-num">' + esc(num) + '</div>' +
+    (sub ? '<div class="stat-sub">' + esc(sub) + '</div>' : '') +
+    '<div class="stat-label">' + esc(label) + '</div></div>';
+}
+
+/**
+ * Leads with weight where there is any, and with the count where there is not,
+ * so a shelf of unweighed artichokes does not report itself as "0 g".
+ */
+function totalStat(lots) {
+  var totals = lotsSize(lots, true);
+  var weighed = lots.some(function (l) { return l.weightG > 0; });
+  var sub = totals.length <= 3 ? totals.slice(1).join(' \u00b7 ') : '';
+  return stat(totals[0], weighed ? 'Total weight' : 'Total', sub);
+}
+
+/**
+ * Oldest first, grouped by the month it went in — the month and year are what
+ * actually matter, and the grouping makes "what has been in there longest"
+ * readable at a glance rather than something you have to work out.
+ */
+function renderByAge(inv) {
+  var sorted = inv.slice().sort(function (a, b) {
+    return (a.dateIn || '').localeCompare(b.dateIn || '') || a.item.localeCompare(b.item);
+  });
+  var shown = sorted.slice(0, S.viewLimit);
+  var oneFreezer = S.viewFreezer !== 'all';
+
+  var html = '';
+  var lastMonth = null;
+  shown.forEach(function (l) {
+    var month = (l.dateIn || '').slice(0, 7);
+    if (month !== lastMonth) {
+      lastMonth = month;
+      html += '<div class="group-head">' + esc(fmtMonth(l.dateIn)) +
+        ' <span class="group-meta">' + esc(ageText(l.dateIn)) + '</span></div>';
+    }
+    html += '<button class="row-btn" data-act="ask-take" data-id="' + esc(l.id) + '">' +
+      '<div class="row-main"><div class="row-name">' + esc(l.item) + '</div>' +
+      '<div class="row-meta">' +
+      (oneFreezer ? '' : '<span class="badge badge-freezer">' + dot(freezerColour(l.freezer)) + '' + esc(l.freezer) + '</span> ') +
+      esc(fmtDate(l.dateIn)) + (l.note ? ' &middot; ' + esc(l.note) : '') + '</div></div>' +
+      '<div class="row-right"><div class="row-strong">' + esc(lotSize(l)) + '</div></div>' +
+      '<span class="row-chevron">&rsaquo;</span></button>';
+  });
+
+  var more = sorted.length > shown.length
+    ? '<button class="btn btn-block" data-act="view-more" style="margin-top:12px">Show more (' + (sorted.length - shown.length) + ' left)</button>'
+    : '';
+
+  return '<div class="card card-flush">' +
+    '<div class="card-head"><div class="card-title">Oldest first</div><div class="spacer"></div>' +
+    '<div class="card-sub">tap a bag to take it out</div></div>' + html + '</div>' + more;
+}
+
+function renderByItem(inv) {
+  var oneFreezer = S.viewFreezer !== 'all';
+  var byCat = groupBy(inv, function (l) { return l.category; });
+
+  var sections = Object.keys(byCat).sort().map(function (cat) {
+    var lots = byCat[cat];
+    var byItem = groupBy(lots, function (l) { return l.item; });
+    var rows = Object.keys(byItem).sort().map(function (item) {
+      return itemRow(byItem[item], 'i:' + cat + ':' + item, oneFreezer ? S.viewFreezer : null);
+    }).join('');
+    // One figure only. A section header listing every unit gets long, and
+    // "1 bag" as a unit reads confusingly next to "24 bags" as the tally, so
+    // the per-unit detail is left to the item rows underneath.
+    var size = lotsSize(lots, true)[0];
+    return '<div class="group-head">' + esc(cat) +
+      ' <span class="group-meta">' + (size === '—' ? '' : esc(size) + ' &middot; ') +
+      lots.length + (lots.length === 1 ? ' bag' : ' bags') + '</span>' +
+      '<span class="spacer"></span>' +
+      '<button class="icon-btn" data-act="open-rename" data-scope="category" data-from="' + esc(cat) + '" ' +
+      'aria-label="Rename ' + esc(cat) + '" title="Rename ' + esc(cat) + '">&#9998;</button>' +
+      '</div>' + rows;
+  }).join('');
+
+  return '<div class="card card-flush">' +
+    '<div class="card-hint">tap to see each bag</div>' + sections + '</div>';
+}
+
+/** One expandable row: totals on top, individual bags underneath. */
+function itemRow(lots, key, freezerContext) {
+  var open = !!S.open[key];
+  var totals = lotsSize(lots);
+  var sorted = lots.slice().sort(function (a, b) { return (a.dateIn || '').localeCompare(b.dateIn || ''); });
+  var oldest = sorted[0];
+
+  var meta = lots.length + (lots.length === 1 ? ' bag' : ' bags');
+  if (!freezerContext) {
+    var places = {};
+    lots.forEach(function (l) { places[l.freezer] = (places[l.freezer] || 0) + l.weightG; });
+    meta += ' &middot; ' + Object.keys(places).map(function (p) {
+      return '<span class="badge badge-freezer">' + dot(freezerColour(p)) + '' + esc(p) + '</span>';
+    }).join(' ');
+  }
+
+  var detail = open
+    ? '<div class="lots">' + sorted.map(function (l, i) {
+        return '<div class="lot">' +
+          '<span class="lot-weight">' + esc(lotSize(l)) + '</span>' +
+          '<span class="lot-date">' + esc(fmtMonth(l.dateIn)) + ' &middot; ' + esc(ageText(l.dateIn)) + '</span>' +
+          (freezerContext ? '' : '<span class="badge badge-freezer">' + dot(freezerColour(l.freezer)) + '' + esc(l.freezer) + '</span>') +
+          (i === 0 && sorted.length > 1 ? '<span class="badge badge-warm">use first</span>' : '') +
+          (l.note ? '<span class="lot-date">' + esc(l.note) + '</span>' : '') +
+          '<span class="spacer"></span>' +
+          '<button class="btn btn-ghost" style="min-height:2.6rem" data-act="ask-take" data-id="' + esc(l.id) + '">Take out</button>' +
+          '</div>';
+      }).join('') +
+      '<div class="lots-foot">' +
+        '<button class="btn btn-ghost" style="min-height:2.6rem;padding-left:0" ' +
+        'data-act="open-rename" data-scope="item" data-from="' + esc(lots[0].item) + '">' +
+        '&#9998; Rename &ldquo;' + esc(lots[0].item) + '&rdquo;</button>' +
+      '</div></div>'
+    : '';
+
+  return '<button class="row-btn" data-act="toggle-open" data-key="' + esc(key) + '">' +
+    '<div class="row-main"><div class="row-name">' + esc(lots[0].item) + '</div>' +
+    '<div class="row-meta">' + meta + ' &middot; oldest ' + esc(fmtMonth(oldest.dateIn)) + '</div></div>' +
+    '<div class="row-right"><div class="row-strong">' + esc(totals[0]) + '</div>' +
+    (totals.length > 1 ? '<div class="row-sub">' + esc(totals.slice(1).join(' \u00b7 ')) + '</div>' : '') + '</div>' +
+    '<span class="row-chevron">' + (open ? '&#9662;' : '&rsaquo;') + '</span></button>' + detail;
+}
+
+/* ----------------------------------------------------------------- TAKE */
+
+function renderTake() {
+  var lots = S.inventory.slice();
+  if (S.takeFreezer !== 'all') lots = lots.filter(function (l) { return l.freezer === S.takeFreezer; });
+  var q = norm(S.takeSearch);
+  if (q) lots = lots.filter(function (l) { return norm(l.item).indexOf(q) > -1 || norm(l.category).indexOf(q) > -1; });
+  lots.sort(function (a, b) {
+    return (a.dateIn || '').localeCompare(b.dateIn || '') || a.item.localeCompare(b.item);
+  });
+
+  var oldestSeen = {};
+  var shown = lots.slice(0, S.takeLimit);
+
+  var freezerChips = '<button class="chip' + (S.takeFreezer === 'all' ? ' is-on-warm' : '') + '" data-act="take-freezer" data-name="all">All freezers</button>' +
+    S.freezers.map(function (f) {
+      return '<button class="chip' + (S.takeFreezer === f.name ? ' is-on-warm' : '') + '" data-act="take-freezer" data-name="' + esc(f.name) + '">' +
+        dot(f.colour) + esc(f.name) + '</button>';
+    }).join('');
+
+  var rows = shown.map(function (l) {
+    var first = !oldestSeen[norm(l.item)];
+    oldestSeen[norm(l.item)] = 1;
+    return '<button class="row-btn" data-act="ask-take" data-id="' + esc(l.id) + '">' +
+      '<div class="row-main"><div class="row-name">' + esc(l.item) +
+        (first ? ' <span class="badge badge-warm">use first</span>' : '') + '</div>' +
+      '<div class="row-meta"><span class="badge badge-freezer">' + dot(freezerColour(l.freezer)) + '' + esc(l.freezer) + '</span> ' +
+      'frozen ' + esc(fmtMonth(l.dateIn)) + ' &middot; ' + esc(ageText(l.dateIn)) + (l.note ? ' &middot; ' + esc(l.note) : '') + '</div></div>' +
+      '<div class="row-right"><div class="row-strong">' + esc(lotSize(l)) + '</div></div>' +
+      '<span class="row-chevron">&rsaquo;</span></button>';
+  }).join('');
+
+  var more = lots.length > shown.length
+    ? '<button class="btn btn-block" data-act="take-more" style="margin-top:12px">Show more (' + (lots.length - shown.length) + ' left)</button>'
+    : '';
+
+  var body = shown.length
+    ? '<div class="card card-flush">' +
+      '<div class="card-head"><div class="card-title">Oldest first</div><div class="spacer"></div>' +
+      '<div class="card-sub">tap what you are taking out</div></div>' + rows + '</div>' + more
+    : '<div class="empty"><span class="empty-mark">&#128230;</span>' +
+      (S.inventory.length ? 'Nothing here matches those filters.' : 'The freezers are empty.') + '</div>';
+
+  return '<div class="stack">' +
+    '<div class="chips">' + freezerChips + '</div>' +
+    '<input class="input" id="take-search" type="search" placeholder="Search for something&hellip;" value="' + esc(S.takeSearch) + '" data-act="take-search">' +
+    body +
+    renderRecentTakes() +
+    '</div>';
+}
+
+function renderRecentTakes() {
+  if (!S.recentTakes.length) return '';
+  var rows = S.recentTakes.map(function (r, i) {
+    return '<div class="row-btn" style="cursor:default">' +
+      '<div class="row-main"><div class="row-name">' + esc(r.label) + '</div>' +
+      '<div class="row-meta">' + esc(r.sub) + '</div></div>' +
+      '<button class="btn btn-ghost" data-act="undo-recent" data-kind="take" data-i="' + i + '">Put back</button></div>';
+  }).join('');
+  return '<div class="card card-flush">' +
+    '<div class="card-head"><div class="card-title">Taken out just now</div></div>' + rows + '</div>';
+}
+
+/* ---------------------------------------------------------------- TOAST */
+
+function renderToast() {
+  if (!S.toast) return '';
+  return '<div class="toast' + (S.toast.kind === 'bad' ? ' toast-bad' : '') + '">' +
+    '<span class="toast-msg">' + esc(S.toast.msg) + '</span>' +
+    (S.toast.undo ? '<button class="toast-undo" data-act="undo-toast">Undo</button>' : '') +
+    '</div>';
+}
+
+/* --------------------------------------------------------------- MODALS */
+
+function renderModal() {
+  var m = S.modal;
+  if (!m) return '';
+  if (m.kind === 'category') return modalCategory(m);
+  if (m.kind === 'keypad') return modalKeypad(m);
+  if (m.kind === 'date') return modalDate(m);
+  if (m.kind === 'take') return modalTake(m);
+  if (m.kind === 'part') return modalPart(m);
+  if (m.kind === 'unit') return modalUnit(m);
+  if (m.kind === 'edit') return modalEdit(m);
+  if (m.kind === 'split') return modalSplit(m);
+  if (m.kind === 'rename') return modalRename(m);
+  return '';
+}
+
+function wrap(inner) { return '<div class="modal-card">' + inner + '</div>'; }
+
+function modalCategory(m) {
+  var chips = S.categories.map(function (c) {
+    return '<button class="chip" data-act="choose-category" data-category="' + esc(c) + '">' + esc(c) + '</button>';
+  }).join('');
+  return wrap(
+    '<h2 class="modal-title">' + esc(m.name) + '</h2>' +
+    '<p class="muted" style="margin-top:0">What sort of thing is it?</p>' +
+    '<div class="chips">' + chips + '</div>' +
+    '<div style="margin-top:16px"><span class="label">Or type a new sort</span>' +
+    '<input class="input" id="cat-input" type="text" placeholder="e.g. Jams" data-act="cat-input" value="' + esc(m.custom || '') + '"></div>' +
+    '<div class="row" style="margin-top:16px">' +
+      '<button class="btn btn-ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
+      '<button class="btn btn-primary" data-act="choose-category" data-category="' + esc(m.custom || '') + '"' + (m.custom ? '' : ' disabled') + '>Use this</button>' +
+    '</div>'
+  );
+}
+
+/**
+ * Calculator-style keypad — the pattern every till and kitchen-scale app uses,
+ * because typing a number beats hunting for it with arrows. Shared by the
+ * Put in form and the part-take-out dialog via `m.target`.
+ */
+function modalKeypad(m) {
+  var isWeight = !m.unit || m.unit === 'g';
+  var oz = isWeight && m.oz;
+
+  var typed = m.digits === '' ? 0 : Number(m.digits) || 0;
+  var raw = oz ? Math.round(typed * GRAMS_PER_OZ) : Math.round(typed);
+  var capped = m.max && raw > m.max ? m.max : raw;
+
+  var note = '';
+  if (m.max && raw > m.max) {
+    note = 'There is only ' + (isWeight ? fmtW(m.max) : fmtCount(m.max, m.unit)) + ' in the bag, so that is all it will take.';
+  } else if (oz && typed) {
+    note = typed + ' oz is ' + fmtW(capped) + ' — round it off afterwards if you like.';
+  } else if (isWeight && capped >= 1000) {
+    note = 'That is ' + (capped / 1000).toFixed(2).replace(/\.?0+$/, '') + ' kg.';
+  }
+
+  // The last key earns its place differently in each mode: "00" saves taps on
+  // round gram weights, a decimal point is what half-ounces need.
+  var keys = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '0', oz ? '.' : '00'];
+
+  var units = isWeight
+    ? '<div class="seg" style="margin-bottom:4px">' +
+        '<button class="seg-btn' + (oz ? '' : ' is-on') + '" data-act="keypad-unit" data-oz="0">Grams</button>' +
+        '<button class="seg-btn' + (oz ? ' is-on' : '') + '" data-act="keypad-unit" data-oz="1">Ounces</button>' +
+      '</div>'
+    : '';
+
+  return wrap(
+    '<h2 class="modal-title">' + esc(m.title || 'Type the weight') + '</h2>' +
+    (m.sub ? '<p class="muted" style="margin:0 0 4px">' + esc(m.sub) + '</p>' : '') +
+    units +
+    '<div class="keypad-display">' +
+      '<span class="keypad-number">' + (m.digits === '' ? '<span class="muted">0</span>' : esc(m.digits)) + '</span>' +
+      '<span class="keypad-unit">' + esc(oz ? 'oz' : (m.unit || 'g')) + '</span>' +
+    '</div>' +
+    '<div class="keypad-note">' + esc(note) + '</div>' +
+    '<div class="keypad">' +
+      keys.map(function (k) {
+        return '<button class="key" data-act="keypad-digit" data-k="' + k + '">' + k + '</button>';
+      }).join('') +
+      '<button class="key key-alt" data-act="keypad-back" aria-label="Delete last digit">&#9003;</button>' +
+    '</div>' +
+    '<div class="row" style="margin-top:16px">' +
+      '<button class="btn btn-ghost" data-act="close-modal">Cancel</button>' +
+      '<button class="btn btn-ghost" data-act="keypad-clear">Clear</button>' +
+      '<span class="spacer"></span>' +
+      '<button class="btn ' + (m.target === 'part' ? 'btn-warm' : 'btn-primary') + '" data-act="keypad-apply"' +
+        (capped >= 1 ? '' : ' disabled') + '>' +
+        (m.target === 'part' ? 'Take ' : 'Use ') +
+        esc(isWeight ? fmtW(capped) : fmtCount(capped, m.unit)) + '</button>' +
+    '</div>'
+  );
+}
+
+function modalDate(m) {
+  var months = [];
+  var d = parseISO(S.today);
+  for (var i = 1; i <= 8; i++) {
+    var x = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    var iso = x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-01';
+    months.push('<button class="chip" data-act="set-date" data-date="' + iso + '">' +
+      x.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) + '</button>');
+  }
+  var yest = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1);
+  var yestISO = yest.getFullYear() + '-' + ('0' + (yest.getMonth() + 1)).slice(-2) + '-' + ('0' + yest.getDate()).slice(-2);
+
+  return wrap(
+    '<h2 class="modal-title">When did it go in?</h2>' +
+    '<p class="muted" style="margin-top:0">The month is what matters most &mdash; pick the exact day if you know it.</p>' +
+    '<div class="chips">' +
+      '<button class="chip" data-act="set-date" data-date="' + S.today + '">Today</button>' +
+      '<button class="chip" data-act="set-date" data-date="' + yestISO + '">Yesterday</button>' +
+    '</div>' +
+    '<div class="section-title" style="margin:18px 0 8px">Earlier months</div>' +
+    '<div class="chips">' + months.join('') + '</div>' +
+    '<div style="margin-top:18px"><span class="label">Or pick an exact date</span>' +
+    '<input class="input" id="date-input" type="date" max="' + S.today + '" value="' + esc(m.value) + '" data-act="date-input"></div>' +
+    '<div class="row" style="margin-top:20px">' +
+      '<button class="btn btn-ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
+      '<button class="btn btn-primary" data-act="set-date" data-date="' + esc(m.value) + '">Use ' + esc(fmtDate(m.value)) + '</button>' +
+    '</div>'
+  );
+}
+
+function lotById(id) {
+  return S.inventory.filter(function (l) { return l.id === id; })[0];
+}
+
+function modalTake(m) {
+  var l = lotById(m.id);
+  if (!l) return '';
+  var splittable = l.count > 1 || (!l.count && l.weightG > 100);
+  return wrap(
+    '<h2 class="modal-title">' + esc(l.item) + '</h2>' +
+    '<p class="muted" style="margin-top:0">' + esc(lotSize(l)) + ' in the ' + esc(l.freezer) + ' freezer &middot; frozen ' +
+      esc(fmtMonth(l.dateIn)) + ' (' + esc(ageText(l.dateIn)) + ')</p>' +
+    '<div class="stack" style="margin-top:18px">' +
+      '<button class="btn btn-warm btn-hero btn-block" data-act="do-take" data-id="' + esc(l.id) + '">' +
+        'Take all ' + esc(lotSize(l)) + ' out</button>' +
+      (splittable
+        ? '<button class="btn btn-block" data-act="open-part" data-id="' + esc(l.id) + '">' +
+          (l.count > 1 ? 'Take only some of them' : 'Take only part of it') + '</button>'
+        : '') +
+      '<button class="btn btn-block" data-act="open-edit" data-id="' + esc(l.id) + '">Change this bag&hellip;</button>' +
+      '<button class="btn btn-ghost btn-block" data-act="close-modal">Cancel</button>' +
+    '</div>'
+  );
+}
+
+function modalPart(m) {
+  var l = lotById(m.id);
+  if (!l) return '';
+  var counted = l.count > 0;
+  var max = counted ? l.count : l.weightG;
+  var fmt = counted
+    ? function (n) { return fmtCount(n, l.unit); }
+    : fmtW;
+
+  var presets = counted
+    ? [1, 2, 4, 6].filter(function (n) { return n < l.count; })
+    : [100, 250, 500, 1000].filter(function (g) { return g < l.weightG; });
+  var chips = presets.map(function (n) {
+    return '<button class="chip' + (m.value === n ? ' is-on-warm' : '') + '" ' +
+      'data-act="' + (counted ? 'set-part-count' : 'set-part') + '" data-' + (counted ? 'n' : 'g') + '="' + n + '">' +
+      esc(fmt(n)) + '</button>';
+  }).join('');
+
+  // Weight follows the same proportion as the count, so say what that means.
+  var leftOver = counted && l.weightG
+    ? fmtCount(l.count - m.value, l.unit) + ' (about ' + fmtW(Math.round(l.weightG * (l.count - m.value) / l.count)) + ')'
+    : fmt(max - m.value);
+
+  return wrap(
+    '<h2 class="modal-title">' +
+      (counted ? 'How many of the ' + esc(fmtCount(l.count, l.unit)) + '?' : 'How much of the ' + esc(fmtW(l.weightG)) + '?') +
+    '</h2>' +
+    '<p class="muted" style="margin-top:0">' + esc(l.item) + ' &middot; ' + esc(l.freezer) + ' freezer</p>' +
+    (chips ? '<div class="chips" style="margin:14px 0">' + chips + '</div>' : '') +
+    stepControl(m.value, {
+      steps: counted ? COUNT_STEPS : WEIGHT_STEPS,
+      fmt: fmt, max: max, noun: counted ? 'pieces' : 'grams',
+      bump: 'bump-part', type: 'type-part',
+    }) +
+    '<p class="muted small" style="margin-top:12px">' + esc(leftOver) + ' would stay in the freezer.</p>' +
+    '<div class="row" style="margin-top:18px">' +
+      '<button class="btn btn-ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
+      '<button class="btn btn-warm" data-act="do-part" data-id="' + esc(l.id) + '">Take ' + esc(fmt(m.value)) + ' out</button>' +
+    '</div>'
+  );
+}
+
+/**
+ * Correcting one bag: everything that can be set on the way in can be put right
+ * here, so a wrong date or freezer never means deleting and starting again.
+ */
+function modalEdit(m) {
+  var l = lotById(m.id);
+  if (!l) return '';
+
+  var freezers = S.freezers.map(function (f) {
+    return '<button class="chip' + (m.freezer === f.name ? ' is-on' : '') + '" data-act="edit-freezer" data-name="' + esc(f.name) + '">' +
+      dot(f.colour) + esc(f.name) + '</button>';
+  }).join('');
+
+  var units = unitChoices(m.unit).map(function (u) {
+    return '<button class="chip' + (norm(m.unit) === norm(u) ? ' is-on' : '') + '" data-act="edit-unit" data-unit="' + esc(u) + '">' + esc(u) + '</button>';
+  }).join('');
+
+  return wrap(
+    '<h2 class="modal-title">' + esc(l.item) + '</h2>' +
+    '<p class="muted" style="margin-top:0">Put right anything that is wrong.</p>' +
+
+    '<div class="stack" style="margin-top:16px">' +
+      '<div><span class="label">Which freezer</span><div class="chips">' + freezers + '</div></div>' +
+
+      '<div><span class="label">Date it went in</span>' +
+        '<div class="row">' +
+          '<div class="spacer" style="font-size:1.05rem;font-weight:700">' + esc(fmtDate(m.dateIn)) + '</div>' +
+          '<button class="btn" data-act="open-date" data-target="edit">Change date</button>' +
+        '</div>' +
+      '</div>' +
+
+      '<div><span class="label">Weight</span>' +
+        (m.weightG > 0
+          ? stepControl(m.weightG, { steps: WEIGHT_STEPS, fmt: fmtW, noun: 'grams', bump: 'edit-bump-weight', type: 'edit-type-weight', min: 0 })
+          : '<div class="not-set">Not weighed <button class="btn btn-ghost" data-act="edit-set-weight" data-g="500">Add a weight</button></div>') +
+        (m.weightG > 0 && m.count > 0
+          ? '<button class="btn btn-ghost" style="padding-left:0" data-act="edit-set-weight" data-g="0">Remove the weight</button>'
+          : '') +
+      '</div>' +
+
+      '<div>' + (m.count > 0
+        ? '<span class="label">How many pieces</span>' +
+          stepControl(m.count, {
+            steps: COUNT_STEPS, noun: 'pieces', bump: 'edit-bump-count', type: 'edit-type-count',
+            fmt: function (n) { return fmtCount(n, m.unit); },
+          }) +
+          '<div class="chips" style="margin-top:10px">' + units +
+            (m.weightG > 0 ? '<button class="chip" data-act="edit-bump-count" data-by="-99999">Remove the count</button>' : '') +
+          '</div>'
+        : '<button class="btn btn-ghost" style="padding-left:0" data-act="edit-add-count">&#43; Count the pieces</button>') +
+      '</div>' +
+
+      '<div><span class="label">Note</span>' +
+        '<input class="input" id="edit-note" type="text" placeholder="optional" value="' + esc(m.note) + '" data-act="edit-note"></div>' +
+
+      '<button class="btn btn-block" data-act="open-split" data-id="' + esc(l.id) + '">' +
+        'Split this into several bags&hellip;</button>' +
+    '</div>' +
+
+    '<div class="row" style="margin-top:20px">' +
+      '<button class="btn btn-ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
+      '<button class="btn btn-primary" data-act="save-edit">Save changes</button>' +
+    '</div>'
+  );
+}
+
+/** One bag into several — eight blocks becoming eight bags of one. */
+function modalSplit(m) {
+  var l = lotById(m.id);
+  if (!l) return '';
+  var into = m.into;
+  var each = {
+    weightG: l.weightG ? Math.ceil(l.weightG / into) : 0,
+    count: l.count ? Math.ceil(l.count / into) : 0,
+    unit: l.unit,
+  };
+  var max = l.count > 0 ? l.count : Math.min(99, l.weightG);
+
+  return wrap(
+    '<h2 class="modal-title">Split the ' + esc(lotSize(l)) + '</h2>' +
+    '<p class="muted" style="margin-top:0">' + esc(l.item) + ' &middot; ' + esc(l.freezer) + ' freezer</p>' +
+    (l.count > 1
+      ? '<div class="chips" style="margin:14px 0">' +
+        '<button class="chip' + (into === l.count ? ' is-on' : '') + '" data-act="set-split" data-n="' + l.count + '">' +
+        'One per bag (' + l.count + ')</button></div>'
+      : '') +
+    stepControl(into, {
+      steps: [5, 1], min: 2, max: max, noun: 'bags', bump: 'bump-split', type: 'type-split',
+      fmt: function (n) { return n + ' bags'; },
+    }) +
+    '<p class="muted small" style="margin-top:12px">Each bag would be about ' + esc(lotSize(each)) + '.</p>' +
+    '<div class="row" style="margin-top:18px">' +
+      '<button class="btn btn-ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
+      '<button class="btn btn-primary" data-act="do-split" data-id="' + esc(l.id) + '">Split into ' + into + ' bags</button>' +
+    '</div>'
+  );
+}
+
+/** Renaming an item or a category, everywhere it appears. */
+function modalRename(m) {
+  var isItem = m.scope === 'item';
+  return wrap(
+    '<h2 class="modal-title">Rename ' + (isItem ? 'this' : 'this group') + '</h2>' +
+    '<p class="muted" style="margin-top:0">' +
+      (isItem
+        ? 'Every bag of &ldquo;' + esc(m.from) + '&rdquo; will take the new name, in the freezers and in the record of what has been used.'
+        : 'Everything filed under &ldquo;' + esc(m.from) + '&rdquo; will move to the new name.') +
+    '</p>' +
+    '<input class="input input-hero" id="rename-input" type="text" style="margin-top:14px" ' +
+      'value="' + esc(m.value) + '" data-act="rename-input">' +
+    '<div class="row" style="margin-top:20px">' +
+      '<button class="btn btn-ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
+      '<button class="btn btn-primary" data-act="do-rename"' +
+        (m.value.trim() && m.value.trim() !== m.from ? '' : ' disabled') + '>Rename</button>' +
+    '</div>'
+  );
+}
+
+/** Free-text unit, for anything the suggestion chips do not cover. */
+function modalUnit(m) {
+  return wrap(
+    '<h2 class="modal-title">What are the pieces called?</h2>' +
+    '<p class="muted" style="margin-top:0">Whatever you would say out loud &mdash; cobs, tubs, slices.</p>' +
+    '<input class="input input-hero" id="unit-input" type="text" style="margin-top:14px" ' +
+      'placeholder="e.g. cobs" value="' + esc(m.value || '') + '" data-act="unit-input">' +
+    '<div class="row" style="margin-top:20px">' +
+      '<button class="btn btn-ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
+      '<button class="btn btn-primary" data-act="apply-unit">Use this word</button>' +
+    '</div>'
+  );
+}
+
+/* -------------------------------------------------------------- actions */
+
+var ACTIONS = {
+  tab: function (d) { setState({ tab: d.tab, modal: null }); },
+
+  refresh: function () { load(true); },
+
+  'close-modal': function () { setState({ modal: null }); },
+
+  /* --- add: picking --- */
+  'pick-item': function (d) {
+    var unit = d.unit || '';
+    setState({
+      draft: Object.assign({}, S.draft, {
+        item: d.name,
+        category: d.category || 'Other',
+        // Something that has only ever been counted starts unweighed, rather
+        // than inviting a made-up 500 g.
+        weightG: Number(d.typical) || (unit ? 0 : 500),
+        count: Number(d.count) || 0,
+        unit: unit,
+        // Something counted last time is almost certainly counted this time.
+        showCount: !!unit,
+        dateIn: S.draft.dateIn || S.today,
+        freezer: S.draft.freezer || (S.freezers[0] ? S.freezers[0].name : ''),
+      }),
+    });
+  },
+
+  'more-cat': function (d) {
+    var open = Object.assign({}, S.openCats);
+    if (open[d.cat]) delete open[d.cat]; else open[d.cat] = true;
+    setState({ openCats: open });
+  },
+
+  'new-item': function (d) { setState({ modal: { kind: 'category', name: tidyName(d.name), custom: '' } }); },
+
+  'cat-input': function (d, el) { S.modal.custom = el.value; render(); },
+
+  'choose-category': function (d) {
+    var name = S.modal.name;
+    var cat = d.category || 'Other';
+    setState({
+      modal: null,
+      draft: Object.assign({}, S.draft, {
+        item: name,
+        category: cat,
+        weightG: 500,
+        dateIn: S.draft.dateIn || S.today,
+        freezer: S.draft.freezer || (S.freezers[0] ? S.freezers[0].name : ''),
+      }),
+    });
+  },
+
+  'clear-item': function () {
+    setState({ draft: Object.assign({}, S.draft, { item: '', category: '' }), query: '' });
+  },
+
+  /* --- add: details --- */
+  'bump-weight': function (d) {
+    var next = Math.max(1, S.draft.weightG + Number(d.by));
+    setState({ draft: Object.assign({}, S.draft, { weightG: next }) });
+  },
+
+  'set-weight': function (d) {
+    setState({ draft: Object.assign({}, S.draft, { weightG: Number(d.g) }) });
+  },
+
+  'set-part-count': function (d) {
+    S.modal.value = Number(d.n);
+    render();
+  },
+
+  'type-weight': function () {
+    setState({ modal: { kind: 'keypad', target: 'draft', digits: '', title: 'How much in each bag?' } });
+  },
+
+  'type-part': function () {
+    var l = lotById(S.modal.id);
+    var counted = l.count > 0;
+    setState({
+      modal: {
+        kind: 'keypad', target: 'part', id: S.modal.id, digits: '',
+        max: counted ? l.count : l.weightG,
+        unit: counted ? (l.unit || 'pieces') : 'g',
+        title: counted ? 'How many to take out?' : 'How much to take out?',
+        sub: l.item + ' — ' + lotSize(l) + ' in the bag',
+      },
+    });
+  },
+
+  'keypad-digit': function (d) {
+    if (d.k === '.' && S.modal.digits.indexOf('.') > -1) return;
+    var next = S.modal.digits + d.k;
+    if (d.k !== '.') next = next.replace(/^0+(?=\d)/, '');
+    if (next.length > 7) return;
+    S.modal.digits = next;
+    render();
+  },
+
+  'keypad-unit': function (d) {
+    S.modal.oz = d.oz === '1';
+    S.modal.digits = '';
+    render();
+  },
+
+  'keypad-back': function () {
+    S.modal.digits = S.modal.digits.slice(0, -1);
+    render();
+  },
+
+  'keypad-clear': function () { S.modal.digits = ''; render(); },
+
+  'keypad-apply': function () {
+    var m = S.modal;
+    var typed = Number(m.digits) || 0;
+    var v = Math.round(m.oz ? typed * GRAMS_PER_OZ : typed);
+    if (m.max && v > m.max) v = m.max;
+    if (v < 1) return;
+    if (m.target === 'part') setState({ modal: { kind: 'part', id: m.id, value: v } });
+    else if (m.target === 'count') setState({ modal: null, draft: Object.assign({}, S.draft, { count: v }) });
+    else if (m.target === 'edit-weight') setState({ modal: Object.assign({}, m.back, { weightG: v }) });
+    else if (m.target === 'edit-count') setState({ modal: Object.assign({}, m.back, { count: v }) });
+    else if (m.target === 'split') setState({ modal: Object.assign({}, m.back, { into: Math.max(2, v) }) });
+    else setState({ modal: null, draft: Object.assign({}, S.draft, { weightG: v }) });
+  },
+
+  'bump-qty': function (d) {
+    var next = Math.max(1, Math.min(99, S.draft.qty + Number(d.by)));
+    setState({ draft: Object.assign({}, S.draft, { qty: next }) });
+  },
+
+  'set-freezer': function (d) {
+    setState({ draft: Object.assign({}, S.draft, { freezer: d.name }) });
+  },
+
+  'open-date': function (d) {
+    var target = d.target === 'edit' ? 'edit' : 'draft';
+    var current = target === 'edit' ? S.modal.dateIn : (S.draft.dateIn || S.today);
+    setState({ modal: { kind: 'date', target: target, value: current, back: target === 'edit' ? S.modal : null } });
+  },
+  'date-input': function (d, el) { S.modal.value = el.value; render(); },
+  'set-date': function (d) {
+    if (!d.date) return;
+    if (S.modal.target === 'edit') {
+      setState({ modal: Object.assign({}, S.modal.back, { dateIn: d.date }) });
+      return;
+    }
+    setState({ modal: null, draft: Object.assign({}, S.draft, { dateIn: d.date }) });
+  },
+
+  'show-count': function () {
+    setState({ draft: Object.assign({}, S.draft, { showCount: true, count: S.draft.count || 6, unit: S.draft.unit || 'pieces' }) });
+  },
+
+  'hide-count': function () {
+    // Taking the count away has to leave a weight behind, or nothing is recorded.
+    var w = S.draft.weightG > 0 ? S.draft.weightG : 500;
+    setState({ draft: Object.assign({}, S.draft, { showCount: false, count: 0, unit: '', weightG: w }) });
+  },
+
+  'bump-count': function (d) {
+    var next = Math.max(1, Math.min(999, (S.draft.count || 1) + Number(d.by)));
+    setState({ draft: Object.assign({}, S.draft, { count: next }) });
+  },
+
+  'set-unit': function (d) {
+    setState({ draft: Object.assign({}, S.draft, { unit: d.unit }) });
+  },
+
+  'type-unit': function () {
+    setState({ modal: { kind: 'unit', value: S.draft.unit } });
+  },
+
+  'unit-input': function (d, el) { S.modal.value = el.value; },
+
+  'apply-unit': function () {
+    var u = String(S.modal.value || '').trim();
+    setState({ modal: null, draft: Object.assign({}, S.draft, { unit: u || 'pieces' }) });
+  },
+
+  'type-count': function () {
+    setState({ modal: { kind: 'keypad', target: 'count', digits: '', unit: S.draft.unit || 'pieces', title: 'How many in each bag?' } });
+  },
+
+  'show-note': function () { setState({ draft: Object.assign({}, S.draft, { showNote: true }) }); },
+  note: function (d, el) { S.draft.note = el.value; },
+  query: function (d, el) { setState({ query: el.value }); },
+
+  'save-add': function () { doAdd(); },
+
+  /* --- view --- */
+  'view-mode': function (d) { setState({ viewMode: d.mode, viewLimit: 60 }); },
+  'view-freezer': function (d) { setState({ viewFreezer: d.name, viewLimit: 60 }); },
+  'view-search': function (d, el) { setState({ viewSearch: el.value, viewLimit: 60 }); },
+  'view-more': function () { setState({ viewLimit: S.viewLimit + 60 }); },
+  'toggle-open': function (d) {
+    var open = Object.assign({}, S.open);
+    if (open[d.key]) delete open[d.key]; else open[d.key] = true;
+    setState({ open: open });
+  },
+
+  /* --- take --- */
+  'take-freezer': function (d) { setState({ takeFreezer: d.name, takeLimit: 40 }); },
+  'take-search': function (d, el) { setState({ takeSearch: el.value, takeLimit: 40 }); },
+  'take-more': function () { setState({ takeLimit: S.takeLimit + 40 }); },
+  'ask-take': function (d) { setState({ modal: { kind: 'take', id: d.id } }); },
+  'open-part': function (d) {
+    var l = lotById(d.id);
+    var value = l.count > 0
+      ? Math.max(1, Math.floor(l.count / 2))
+      : Math.round(Math.min(250, Math.max(50, l.weightG / 2)));
+    setState({ modal: { kind: 'part', id: d.id, value: value } });
+  },
+  'bump-part': function (d) {
+    var l = lotById(S.modal.id);
+    var max = l.count > 0 ? l.count : l.weightG;
+    S.modal.value = Math.max(1, Math.min(max, S.modal.value + Number(d.by)));
+    render();
+  },
+  'set-part': function (d) {
+    S.modal.value = Number(d.g);
+    render();
+  },
+  'do-take': function (d) { doTake([d.id]); },
+  'do-part': function (d) { doPart(d.id, S.modal.value); },
+
+  /* --- undo --- */
+  /* --- correcting a bag --- */
+  'open-edit': function (d) {
+    var l = lotById(d.id);
+    setState({
+      modal: {
+        kind: 'edit', id: l.id, freezer: l.freezer, dateIn: l.dateIn,
+        weightG: l.weightG, count: l.count, unit: l.unit || 'pieces', note: l.note,
+      },
+    });
+  },
+
+  'edit-freezer': function (d) { S.modal.freezer = d.name; render(); },
+  'edit-unit': function (d) { S.modal.unit = d.unit; render(); },
+  'edit-note': function (d, el) { S.modal.note = el.value; },
+
+  'edit-bump-weight': function (d) {
+    S.modal.weightG = Math.max(0, S.modal.weightG + Number(d.by));
+    render();
+  },
+  'edit-set-weight': function (d) { S.modal.weightG = Number(d.g); render(); },
+  'edit-type-weight': function () {
+    setState({ modal: { kind: 'keypad', target: 'edit-weight', digits: '', title: 'Weight of this bag', back: S.modal } });
+  },
+
+  'edit-add-count': function () { S.modal.count = 1; S.modal.unit = S.modal.unit || 'pieces'; render(); },
+  'edit-bump-count': function (d) {
+    var next = S.modal.count + Number(d.by);
+    S.modal.count = next < 1 ? (S.modal.weightG > 0 ? 0 : 1) : Math.min(999, next);
+    render();
+  },
+  'edit-type-count': function () {
+    setState({
+      modal: {
+        kind: 'keypad', target: 'edit-count', digits: '', unit: S.modal.unit || 'pieces',
+        title: 'How many pieces', back: S.modal,
+      },
+    });
+  },
+
+  'save-edit': function () { doEdit(); },
+
+  /* --- splitting --- */
+  'open-split': function (d) {
+    var l = lotById(d.id);
+    setState({ modal: { kind: 'split', id: d.id, into: l.count > 1 ? l.count : 2, back: S.modal } });
+  },
+  'bump-split': function (d) {
+    var l = lotById(S.modal.id);
+    var max = l.count > 0 ? l.count : Math.min(99, l.weightG);
+    S.modal.into = Math.max(2, Math.min(max, S.modal.into + Number(d.by)));
+    render();
+  },
+  'set-split': function (d) { S.modal.into = Number(d.n); render(); },
+  'type-split': function () {
+    var l = lotById(S.modal.id);
+    setState({
+      modal: {
+        kind: 'keypad', target: 'split', digits: '', unit: 'bags',
+        max: l.count > 0 ? l.count : Math.min(99, l.weightG),
+        title: 'How many bags?', back: S.modal,
+      },
+    });
+  },
+  'do-split': function (d) { doSplit(d.id, S.modal.into); },
+
+  /* --- renaming --- */
+  'open-rename': function (d) {
+    setState({ modal: { kind: 'rename', scope: d.scope, from: d.from, value: d.from } });
+  },
+  'rename-input': function (d, el) {
+    S.modal.value = el.value;
+    var btn = document.querySelector('[data-act="do-rename"]');
+    if (btn) btn.disabled = !el.value.trim() || el.value.trim() === S.modal.from;
+  },
+  'do-rename': function () { doRename(); },
+
+  'undo-toast': function () {
+    var token = S.toast && S.toast.undo;
+    if (token) doUndo(token);
+  },
+  'undo-recent': function (d) {
+    var list = d.kind === 'add' ? S.recentAdds : S.recentTakes;
+    var entry = list[Number(d.i)];
+    if (entry) doUndo(entry.token);
+  },
+};
+
+/* ---------------------------------------------------------- operations */
+
+function doAdd() {
+  var d = S.draft;
+  var payload = {
+    item: d.item, category: d.category, freezer: d.freezer,
+    weightG: d.weightG, count: d.showCount ? d.count : 0, unit: d.unit,
+    qty: d.qty, dateIn: d.dateIn || S.today, note: d.note,
+  };
+  var label = d.qty + ' × ' + draftEach(d) + ' ' + d.item;
+  var sub = 'into the ' + d.freezer + ' freezer · ' + fmtDate(payload.dateIn);
+
+  setState({ busy: true });
+  api('apiAdd', payload).then(function (res) {
+    S.inventory = S.inventory.concat(res.lots);
+    if (!S.items.some(function (it) { return norm(it.name) === norm(d.item); })) {
+      S.items.unshift({
+        name: d.item, category: d.category, typicalG: d.weightG,
+        typicalCount: payload.count, unit: payload.unit, uses: 1,
+      });
+    }
+    if (S.categories.indexOf(d.category) < 0) S.categories.push(d.category);
+    S.recentAdds.unshift({ label: label, sub: sub, token: res.undo });
+    S.recentAdds = S.recentAdds.slice(0, 8);
+    S.busy = false;
+    // Keep the freezer and date so a run of bagging-up stays quick.
+    S.draft = Object.assign({}, BLANK_DRAFT, { freezer: d.freezer, dateIn: d.dateIn });
+    S.query = '';
+    toast(label + ' put in the ' + d.freezer + ' freezer', res.undo);
+  }).catch(function (e) {
+    S.busy = false;
+    fail(e);
+  });
+}
+
+function doTake(ids) {
+  var lots = ids.map(lotById).filter(Boolean);
+  if (!lots.length) return;
+  var label = lots.length === 1
+    ? lotSize(lots[0]) + ' ' + lots[0].item
+    : lots.length + ' bags';
+  var sub = 'out of the ' + lots[0].freezer + ' freezer · ' + fmtDate(S.today);
+
+  setState({ busy: true, modal: null });
+  api('apiRemove', { ids: ids, dateOut: S.today }).then(function (res) {
+    S.inventory = S.inventory.filter(function (l) { return ids.indexOf(l.id) < 0; });
+    S.recentTakes.unshift({ label: label, sub: sub, token: res.undo });
+    S.recentTakes = S.recentTakes.slice(0, 8);
+    S.busy = false;
+    toast(label + ' taken out', res.undo);
+  }).catch(function (e) {
+    S.busy = false;
+    fail(e);
+  });
+}
+
+function doPart(id, value) {
+  var lot = lotById(id);
+  if (!lot) return;
+  var counted = lot.count > 0;
+  if (value >= (counted ? lot.count : lot.weightG)) return doTake([id]);
+
+  var payload = counted
+    ? { id: id, count: value, dateOut: S.today }
+    : { id: id, weightG: value, dateOut: S.today };
+  var takenW = counted ? Math.round((lot.weightG * value) / lot.count) : value;
+  var label = (counted ? fmtCount(value, lot.unit) : fmtW(value)) + ' ' + lot.item;
+
+  setState({ busy: true, modal: null });
+  api('apiRemovePart', payload).then(function (res) {
+    lot.weightG -= takenW;
+    if (counted) lot.count -= value;
+    S.recentTakes.unshift({ label: label, sub: 'out of the ' + lot.freezer + ' freezer · ' + lotSize(lot) + ' left', token: res.undo });
+    S.recentTakes = S.recentTakes.slice(0, 8);
+    S.busy = false;
+    toast(label + ' taken out', res.undo);
+  }).catch(function (e) {
+    S.busy = false;
+    fail(e);
+  });
+}
+
+function doEdit() {
+  var m = S.modal;
+  var patch = {
+    freezer: m.freezer, dateIn: m.dateIn, weightG: m.weightG,
+    count: m.count, unit: m.count > 0 ? m.unit : '', note: m.note,
+  };
+  setState({ busy: true, modal: null });
+  api('apiEditLot', { id: m.id, patch: patch }).then(function (res) {
+    var i = S.inventory.findIndex(function (l) { return l.id === m.id; });
+    if (i > -1) S.inventory[i] = res.lot;
+    S.busy = false;
+    toast(res.lot.item + ' updated', res.undo);
+  }).catch(function (e) {
+    S.busy = false;
+    fail(e);
+  });
+}
+
+function doSplit(id, into) {
+  var lot = lotById(id);
+  if (!lot) return;
+  setState({ busy: true, modal: null });
+  api('apiSplitLot', { id: id, into: into }).then(function (res) {
+    S.inventory = S.inventory.filter(function (l) { return l.id !== id; }).concat(res.lots);
+    S.busy = false;
+    toast(lot.item + ' split into ' + into + ' bags', res.undo);
+  }).catch(function (e) {
+    S.busy = false;
+    fail(e);
+  });
+}
+
+function doRename() {
+  var m = S.modal;
+  var to = m.value.trim();
+  if (!to || to === m.from) return setState({ modal: null });
+
+  var fn = m.scope === 'item' ? 'apiRenameItem' : 'apiRenameCategory';
+  setState({ busy: true, modal: null });
+  api(fn, { from: m.from, to: to }).then(function (res) {
+    S.busy = false;
+    // A rename touches the catalogue and every view, so re-read rather than
+    // trying to patch each one by hand.
+    return load(false).then(function () {
+      toast('Renamed to ' + to, res.undo);
+    });
+  }).catch(function (e) {
+    S.busy = false;
+    fail(e);
+  });
+}
+
+function doUndo(token) {
+  setState({ busy: true, toast: null });
+  api('apiUndo', token).then(function () {
+    S.recentAdds = S.recentAdds.filter(function (r) { return r.token !== token; });
+    S.recentTakes = S.recentTakes.filter(function (r) { return r.token !== token; });
+    S.busy = false;
+    return load(false).then(function () { toast('Undone.'); });
+  }).catch(function (e) {
+    S.busy = false;
+    fail(e);
+  });
+}
+
+/* ------------------------------------------------------------ bootstrap */
+
+function load(showToast) {
+  return api('apiGetState').then(function (st) {
+    S.freezers = st.freezers;
+    S.items = st.items;
+    S.categories = st.categories;
+    S.inventory = st.inventory;
+    S.sheetUrl = st.sheetUrl || '';
+    S.today = st.today || todayISO();
+    if (!S.draft.dateIn) S.draft.dateIn = S.today;
+    if (!S.draft.freezer && S.freezers[0]) S.draft.freezer = S.freezers[0].name;
+    S.ready = true;
+    render();
+    if (showToast) toast('Reloaded from the spreadsheet.');
+  }).catch(function (e) {
+    S.ready = true;
+    render();
+    fail(e);
+  });
+}
+
+document.addEventListener('click', function (e) {
+  if (e.target.id === 'modal-host') return ACTIONS['close-modal']();
+  var el = e.target.closest('[data-act]');
+  if (!el) return;
+  var act = el.dataset.act;
+  if (el.tagName === 'INPUT') return; // inputs act on `input`, not `click`
+  if (ACTIONS[act]) {
+    e.preventDefault();
+    ACTIONS[act](el.dataset, el, e);
+  }
+});
+
+document.addEventListener('input', function (e) {
+  var el = e.target.closest('[data-act]');
+  if (!el) return;
+  var act = el.dataset.act;
+  if (ACTIONS[act]) ACTIONS[act](el.dataset, el, e);
+});
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && S.modal) ACTIONS['close-modal']();
+});
+
+window.addEventListener('offline', function () { setState({ offline: true }); });
+window.addEventListener('online', function () {
+  setState({ offline: false });
+  load(false);
+});
+
+render();
+load(false);
+
+</script>

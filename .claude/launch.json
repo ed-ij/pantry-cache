@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "freezer-log",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["dev/server.mjs"],
+      "port": 5178
+    }
+  ]
+}

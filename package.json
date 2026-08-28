@@ -1,0 +1,14 @@
+{
+  "name": "freezer-log",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Freezer inventory web app backed by a Google Sheet",
+  "scripts": {
+    "dev": "node dev/server.mjs",
+    "build": "node build.mjs",
+    "test": "node dev/smoke.mjs",
+    "export": "node tools/export-csv.mjs",
+    "import": "node tools/import-sheet.mjs"
+  }
+}
