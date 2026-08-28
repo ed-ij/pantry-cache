@@ -890,16 +890,31 @@ button, input, select, textarea {
 
 /* ----------------------------------------------------------------- modal */
 
-.modal-host:empty { display: none; }
-
+/*
+ * A real <dialog>, so the role, the focus trap, the inert background, Escape
+ * and the top layer come from the platform rather than being approximated.
+ * It needs resetting from the UA's default box, which is a centred, bordered,
+ * auto-width sheet.
+ */
 .modal-host {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  padding: 16px;
+  background: transparent;
+  color: inherit;
+  overflow: hidden;
   display: grid;
   place-items: end center;
+}
+
+.modal-host:not([open]) { display: none; }
+
+.modal-host::backdrop {
   background: rgba(10, 22, 34, .48);
-  padding: 16px;
   animation: fade .15s ease-out;
 }
 
@@ -912,6 +927,8 @@ button, input, select, textarea {
   max-width: 520px;
   max-height: 90dvh;
   overflow-y: auto;
+  /* Without this, dragging a tall dialog scrolls the list behind it. */
+  overscroll-behavior: contain;
   background: var(--surface);
   border-radius: 22px;
   box-shadow: var(--shadow-lift);
@@ -972,6 +989,42 @@ button, input, select, textarea {
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+
+/* --------------------------------------------------------------- pending */
+/*
+ * Constraint 2 says nothing is optimistic, so every action costs a visible
+ * one to two seconds. The app owed the user a sign that those seconds are
+ * doing something: without it the row you just asked to remove sits there
+ * looking untouched, and tapping again is the natural response.
+ */
+body.is-busy .panel {
+  opacity: .55;
+  pointer-events: none;
+  transition: opacity .12s;
+}
+
+body.is-busy .topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: sweep 1s ease-in-out infinite;
+}
+
+
+@keyframes sweep {
+  from { background-position: -40% 0; }
+  to { background-position: 140% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.is-busy .topbar::after { animation: none; background-position: 50% 0; }
 }
 
 </style>

@@ -13,6 +13,39 @@
 
 /* ------------------------------------------------------------ transport */
 
+/**
+ * Every sentence the backend throws is written for a person — "Please choose
+ * which freezer it is going in". Anything else that reaches this point is not:
+ * Google's own lock timeout ("Could not obtain lock after 20000ms"), a stack
+ * trace from an unexpected exception, a transport failure with no message at
+ * all. Constraint 3 exists to keep those off the screen, and they were the one
+ * class it did not cover.
+ *
+ * So a failure is either one of ours, which passes through, or it is not, and
+ * becomes one plain sentence. The original goes to the console either way, so
+ * Stackdriver still has it.
+ */
+function translateError(raw) {
+  var msg = String((raw && raw.message) || raw || '');
+  if (window.console && console.error) console.error('[freezer-log]', raw);
+
+  // Our own messages all end in a full stop and read as English. Google's do
+  // not, and neither do transport failures — but rather than trying to
+  // recognise every way that can look, anything unrecognised is treated as
+  // "not saved", which is both truer and safer than guessing.
+  if (/^[A-Z][^]*[.?]$/.test(msg) && !/\b(error|exception|null|undefined|0x|at .+:\d+)\b/i.test(msg)) {
+    return { message: msg, ours: true };
+  }
+  if (/lock/i.test(msg)) {
+    return { message: 'Someone else is using the app just now. Please try again in a moment.', ours: false };
+  }
+  return {
+    message: 'That was not saved. Check the connection and try again.',
+    ours: false,
+    likelyOffline: true,
+  };
+}
+
 function api(fn, arg) {
   return new Promise(function (resolve, reject) {
     if (window.google && window.google.script && window.google.script.run) {
@@ -272,14 +305,22 @@ var S = {
   modal: null,
   toast: null,
   busy: false,
+  loadFailed: false,
   offline: navigator.onLine === false,
 };
 
 var toastTimer = null;
+var lastToastHtml = '';
 
 function setState(patch) {
   Object.assign(S, patch);
   render();
+}
+
+/** Ends a write: clears the flag, notes that the connection is alive. */
+function done() {
+  S.busy = false;
+  succeeded();
 }
 
 /**
@@ -310,27 +351,33 @@ function toast(msg, undoToken, kind) {
 }
 
 /**
- * Backend errors are already written for a person ("Please choose a freezer").
- * A dropped connection is not — it arrives as "Failed to fetch" or similar,
- * which tells the reader nothing, so it gets translated.
+ * The spec names the scenario precisely: a freezer beyond wi-fi range. That
+ * tablet is still associated with the access point, so navigator.onLine reports
+ * true and never fires. The old test also matched the fetch API's vocabulary —
+ * "failed to fetch", "load failed" — which is the dev server's transport, not
+ * google.script.run's.
+ *
+ * So a failed request is the authoritative signal: the badge latches on when
+ * one looks like a transport failure, and clears when anything succeeds.
+ * navigator.onLine stays as a fast path, not as the source of truth.
  */
-function isOffline(err) {
-  if (navigator.onLine === false) return true;
-  var msg = String((err && err.message) || err || '');
-  return /failed to fetch|networkerror|network error|load failed|net::|timed? ?out/i.test(msg);
+function fail(err) {
+  var t = translateError(err);
+  if (t.likelyOffline) S.offline = true;
+  toast(t.likelyOffline
+    ? 'No connection, so that was not saved. Try again once the wi-fi is back.'
+    : t.message, null, 'bad');
 }
 
-function fail(err) {
-  if (isOffline(err)) {
-    toast('No connection, so that was not saved. Try again once the wi-fi is back.', null, 'bad');
-    return;
-  }
-  toast((err && err.message) || 'Something went wrong.', null, 'bad');
+/** Anything reaching the sheet proves the connection, whatever onLine claims. */
+function succeeded() {
+  if (S.offline) S.offline = false;
 }
 
 /* --------------------------------------------------------------- render */
 
 function render() {
+  document.body.classList.toggle('is-busy', !!S.busy);
   var active = document.activeElement;
   var focusId = active && active.id ? active.id : null;
   var selStart = focusId && 'selectionStart' in active ? active.selectionStart : null;
@@ -338,8 +385,17 @@ function render() {
   $('#topbar-right').innerHTML = renderTopRight();
   $('#tabbar').innerHTML = renderTabs();
   $('#panel').innerHTML = S.ready ? renderPanel() : renderLoading();
-  $('#toast-host').innerHTML = renderToast();
-  $('#modal-host').innerHTML = renderModal();
+
+  // aria-live: rewriting this on every render — which means every keystroke in
+  // a search box and every chip tap — made a screen reader re-read the toast
+  // each time. Only touch it when what it says has actually changed.
+  var toastHtml = renderToast();
+  if (toastHtml !== lastToastHtml) {
+    $('#toast-host').innerHTML = toastHtml;
+    lastToastHtml = toastHtml;
+  }
+
+  syncModal();
 
   if (focusId) {
     var again = document.getElementById(focusId);
@@ -352,6 +408,58 @@ function render() {
   }
 }
 
+/**
+ * A <dialog> supplies the role, the accessible name, the focus trap, the inert
+ * background, Escape handling and the top layer — all of which were missing,
+ * and none of which needs a library. Before this, opening a modal left
+ * document.activeElement on <body>, so Tab started from the top of the page
+ * behind the scrim, and the page scrolled underneath.
+ */
+var modalKey = null;
+var focusBeforeModal = null;
+
+function syncModal() {
+  var host = $('#modal-host');
+  var want = S.modal ? renderModal() : '';
+
+  if (!want) {
+    if (host.open) host.close();
+    host.innerHTML = '';
+    modalKey = null;
+    if (focusBeforeModal && document.contains(focusBeforeModal)) focusBeforeModal.focus();
+    focusBeforeModal = null;
+    return;
+  }
+
+  var opening = !host.open;
+  if (opening) focusBeforeModal = document.activeElement;
+  host.innerHTML = want;
+  if (opening) host.showModal();
+
+  // Only move focus when a different dialog appears, not on every keystroke
+  // inside the one already open.
+  var key = S.modal.kind + ':' + (S.modal.id || '');
+  if (key !== modalKey) {
+    modalKey = key;
+    var first = host.querySelector('input, .btn-hero, .btn-primary, .btn-warm, button');
+    if (first) first.focus();
+  }
+}
+
+/** Is there unsaved work in the open dialog that a stray tap would discard? */
+function modalIsDirty() {
+  var m = S.modal;
+  if (!m) return false;
+  if (m.kind === 'edit') {
+    var l = lotById(m.id);
+    if (!l) return false;
+    return m.freezer !== l.freezer || m.dateIn !== l.dateIn || m.weightG !== l.weightG ||
+      m.count !== l.count || norm(m.unit) !== norm(l.unit || 'pieces') || m.note !== l.note;
+  }
+  if (m.kind === 'rename') return norm(tidyName(m.value)) !== norm(m.from);
+  return false;
+}
+
 function renderLoading() {
   return '<div class="stack">' +
     '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>' +
@@ -361,6 +469,12 @@ function renderLoading() {
 function renderTopRight() {
   var total = sum(S.inventory, function (l) { return l.weightG; });
   if (!S.ready) return '';
+  // "0 g stored" beside a banner saying nothing could be read is exactly the
+  // confident-and-wrong number the banner exists to avoid.
+  if (S.loadFailed) {
+    return '<span class="badge badge-warm">Not loaded</span>' +
+      '<button class="btn btn-ghost btn-compact" data-act="refresh" title="Try again">&#8635;</button>';
+  }
   if (S.offline) {
     return '<span class="badge badge-warm">Offline &mdash; cannot save</span>' +
       '<button class="btn btn-ghost" style="min-height:2.6rem;padding:0 12px" data-act="refresh" title="Try again">&#8635;</button>';
@@ -386,9 +500,31 @@ function renderTabs() {
 }
 
 function renderPanel() {
+  if (S.loadFailed) return renderLoadFailed();
   if (S.tab === 'add') return renderAdd();
   if (S.tab === 'view') return renderView();
   return renderTake();
+}
+
+/**
+ * Shown instead of the tabs, not alongside them. A toast that disappears after
+ * nine seconds leaves a plausible, false empty state behind for ever; this
+ * stays until a reload works.
+ */
+function renderLoadFailed() {
+  return '<div class="stack">' +
+    '<div class="banner" style="display:block">' +
+      '<div style="font-weight:700;font-size:1.05rem">The freezer list could not be fetched</div>' +
+      '<div style="margin-top:6px;font-weight:500">' +
+        'This is not the same as the freezers being empty &mdash; nothing has been read, ' +
+        'so nothing can be shown. Your spreadsheet is untouched.' +
+      '</div>' +
+    '</div>' +
+    '<button class="btn btn-primary btn-hero btn-block" data-act="refresh">Try again</button>' +
+    (S.sheetUrl
+      ? '<a class="btn btn-block" href="' + esc(S.sheetUrl) + '" target="_blank" rel="noopener">Open the spreadsheet instead</a>'
+      : '') +
+    '</div>';
 }
 
 /* ------------------------------------------------------------------ ADD */
@@ -568,9 +704,9 @@ function renderAddDetails() {
 
       '<div><span class="label">How many of them?</span>' +
         '<div class="stepper">' +
-          '<button class="stepper-btn" data-act="bump-qty" data-by="-1"' + (d.qty <= 1 ? ' disabled' : '') + '>&minus;</button>' +
+          '<button class="stepper-btn" id="bump-qty-m1" data-act="bump-qty" data-by="-1"' + (d.qty <= 1 ? ' disabled' : '') + '>&minus;1</button>' +
           '<div class="stepper-value">' + d.qty + '<small>' + (d.qty === 1 ? 'bag / tub' : 'bags / tubs') + '</small></div>' +
-          '<button class="stepper-btn" data-act="bump-qty" data-by="1">&plus;</button>' +
+          '<button class="stepper-btn" id="bump-qty-p1" data-act="bump-qty" data-by="1">&plus;1</button>' +
         '</div>' +
       '</div>' +
     '</div>' +
@@ -615,10 +751,14 @@ function stepControl(value, opts) {
   var fmt = opts.fmt;
   var max = opts.max || 0;
 
+  // render() restores focus by id, and only text inputs had one — so pressing
+  // +50 destroyed the button and dropped focus to <body>. A stable id per
+  // action and step is all the existing logic needs.
   function btn(by) {
     var over = max && by > 0 && value + by > max;
     var under = value + by < (opts.min === undefined ? 1 : opts.min);
     return '<button class="step-btn' + (Math.abs(by) === steps[1] ? ' step-fine' : ' step-coarse') + '" ' +
+      'id="' + esc(opts.bump) + '-' + (by > 0 ? 'p' : 'm') + Math.abs(by) + '" ' +
       'data-act="' + opts.bump + '" data-by="' + by + '"' + (over || under ? ' disabled' : '') +
       ' aria-label="' + (by > 0 ? 'Add ' : 'Take off ') + Math.abs(by) + ' ' + esc(opts.noun) + '">' +
       (by > 0 ? '&plus;' : '&minus;') + Math.abs(by) + '</button>';
@@ -626,7 +766,7 @@ function stepControl(value, opts) {
 
   return '<div class="weigher">' +
     btn(-steps[0]) + btn(-steps[1]) +
-    '<button class="weigher-value" data-act="' + opts.type + '" aria-label="Type an exact ' + esc(opts.noun) + '">' +
+    '<button class="weigher-value" id="' + esc(opts.type) + '" data-act="' + opts.type + '" aria-label="Type an exact ' + esc(opts.noun) + '">' +
       esc(fmt(value)) + '<small>tap to type</small></button>' +
     btn(steps[1]) + btn(steps[0]) +
     '</div>';
@@ -972,7 +1112,22 @@ function renderModal() {
   return '';
 }
 
-function wrap(inner) { return '<div class="modal-card">' + inner + '</div>'; }
+function wrap(inner) {
+  var notice = S.modal && S.modal.notice
+    ? '<div class="banner" style="margin-bottom:14px">' + esc(S.modal.notice) + '</div>'
+    : '';
+  return '<div class="modal-card">' + notice + inner + '</div>';
+}
+
+/** Never an empty modal host, which :empty hides and the user reads as a dead tap. */
+function modalGone() {
+  return wrap(
+    '<h2 class="modal-title">That bag has gone</h2>' +
+    '<p class="muted">It is no longer in the freezer &mdash; it may have been taken out ' +
+    'on another device, or undone.</p>' +
+    '<button class="btn btn-primary btn-block" style="margin-top:16px" data-act="refresh">Reload the list</button>'
+  );
+}
 
 function modalCategory(m) {
   var chips = S.categories.map(function (c) {
@@ -1035,7 +1190,7 @@ function modalKeypad(m) {
     '<div class="keypad-note">' + esc(note) + '</div>' +
     '<div class="keypad">' +
       keys.map(function (k) {
-        return '<button class="key" data-act="keypad-digit" data-k="' + k + '">' + k + '</button>';
+        return '<button class="key" id="key-' + esc(k) + '" data-act="keypad-digit" data-k="' + k + '">' + k + '</button>';
       }).join('') +
       '<button class="key key-alt" data-act="keypad-back" aria-label="Delete last digit">&#9003;</button>' +
     '</div>' +
@@ -1091,9 +1246,27 @@ function lotById(id) {
   return S.inventory.filter(function (l) { return l.id === id; })[0];
 }
 
+/**
+ * The bag, or a plain sentence and a reload.
+ *
+ * Half the handlers used to call lotById and read a property straight off it,
+ * throwing a TypeError into a console nobody is looking at; the other half
+ * guarded and returned '' from the modal, which :empty then hid. Both produced
+ * the same thing on screen — you tap, and nothing happens — for a state the
+ * spec explicitly says will occur, since two people can act on a stale view.
+ */
+function requireLot(id) {
+  var lot = lotById(id);
+  if (lot) return lot;
+  setState({ modal: null });
+  toast('That bag is no longer in the freezer. Reloading\u2026', null, 'bad');
+  load(false);
+  return null;
+}
+
 function modalTake(m) {
   var l = lotById(m.id);
-  if (!l) return '';
+  if (!l) return modalGone();
   // A count of 1 with a unit — "1 litre" of stock, "1 box" of faggots — used
   // to satisfy neither branch, so a whole class of Prepared food offered no
   // partial take-out at all. Those are exactly the things you take half of.
@@ -1122,7 +1295,7 @@ function modalTake(m) {
 
 function modalPart(m) {
   var l = lotById(m.id);
-  if (!l) return '';
+  if (!l) return modalGone();
   var counted = l.count > 0;
   var max = counted ? l.count : l.weightG;
   var fmt = counted
@@ -1168,7 +1341,7 @@ function modalPart(m) {
  */
 function modalEdit(m) {
   var l = lotById(m.id);
-  if (!l) return '';
+  if (!l) return modalGone();
 
   var freezers = S.freezers.map(function (f) {
     return '<button class="chip' + (m.freezer === f.name ? ' is-on' : '') + '" data-act="edit-freezer" data-name="' + esc(f.name) + '">' +
@@ -1232,7 +1405,7 @@ function modalEdit(m) {
 /** One bag into several — eight blocks becoming eight bags of one. */
 function modalSplit(m) {
   var l = lotById(m.id);
-  if (!l) return '';
+  if (!l) return modalGone();
   var into = m.into;
   var each = {
     weightG: l.weightG ? Math.ceil(l.weightG / into) : 0,
@@ -1320,9 +1493,18 @@ function modalUnit(m) {
 /* -------------------------------------------------------------- actions */
 
 var ACTIONS = {
-  tab: function (d) { setState({ tab: d.tab, modal: null }); },
+  tab: function (d) {
+    setState({ tab: d.tab, modal: null });
+    // Otherwise a tap on "Put in" from halfway down 200 bags lands halfway
+    // down the form, with "What are you putting in the freezer?" off screen.
+    window.scrollTo(0, 0);
+    // #panel has carried tabindex="-1" all along; nothing ever focused it, so
+    // a screen reader was never told the view had changed.
+    var panel = $('#panel');
+    if (panel) panel.focus();
+  },
 
-  refresh: function () { load(true); },
+  refresh: function () { setState({ modal: null }); load(true); },
 
   'close-modal': function () { setState({ modal: null }); },
 
@@ -1395,7 +1577,8 @@ var ACTIONS = {
   },
 
   'type-part': function () {
-    var l = lotById(S.modal.id);
+    var l = requireLot(S.modal.id);
+    if (!l) return;
     var counted = l.count > 0;
     setState({
       modal: {
@@ -1512,15 +1695,19 @@ var ACTIONS = {
   },
 
   'show-note': function () { setState({ draft: Object.assign({}, S.draft, { showNote: true }) }); },
+  // The convention, now that there is one: an input whose value changes what
+  // is drawn goes through debounced setState; an input that nothing else on
+  // screen depends on writes straight to state and skips the render. The note
+  // fields are the second kind.
   note: function (d, el) { S.draft.note = el.value; },
-  query: function (d, el) { setState({ query: el.value }); },
+  query: debounced(function (v) { setState({ query: v }); }),
 
   'save-add': function () { doAdd(); },
 
   /* --- view --- */
   'view-mode': function (d) { setState({ viewMode: d.mode, viewLimit: 60 }); },
   'view-freezer': function (d) { setState({ viewFreezer: d.name, viewLimit: 60 }); },
-  'view-search': function (d, el) { setState({ viewSearch: el.value, viewLimit: 60 }); },
+  'view-search': debounced(function (v) { setState({ viewSearch: v, viewLimit: 60 }); }),
   'view-more': function () { setState({ viewLimit: S.viewLimit + 60 }); },
   'toggle-open': function (d) {
     var open = Object.assign({}, S.open);
@@ -1530,11 +1717,15 @@ var ACTIONS = {
 
   /* --- take --- */
   'take-freezer': function (d) { setState({ takeFreezer: d.name, takeLimit: 40 }); },
-  'take-search': function (d, el) { setState({ takeSearch: el.value, takeLimit: 40 }); },
+  'take-search': debounced(function (v) { setState({ takeSearch: v, takeLimit: 40 }); }),
   'take-more': function () { setState({ takeLimit: S.takeLimit + 40 }); },
-  'ask-take': function (d) { setState({ modal: { kind: 'take', id: d.id } }); },
+  'ask-take': function (d) {
+    if (!requireLot(d.id)) return;
+    setState({ modal: { kind: 'take', id: d.id } });
+  },
   'open-part': function (d) {
-    var l = lotById(d.id);
+    var l = requireLot(d.id);
+    if (!l) return;
     if (l.count === 1 && !l.weightG) return ACTIONS['open-edit'](d);
     var value = l.count > 0
       ? Math.max(1, Math.floor(l.count / 2))
@@ -1542,7 +1733,8 @@ var ACTIONS = {
     setState({ modal: { kind: 'part', id: d.id, value: value } });
   },
   'bump-part': function (d) {
-    var l = lotById(S.modal.id);
+    var l = requireLot(S.modal.id);
+    if (!l) return;
     var max = l.count > 0 ? l.count : l.weightG;
     S.modal.value = Math.max(1, Math.min(max, S.modal.value + Number(d.by)));
     render();
@@ -1557,7 +1749,8 @@ var ACTIONS = {
   /* --- undo --- */
   /* --- correcting a bag --- */
   'open-edit': function (d) {
-    var l = lotById(d.id);
+    var l = requireLot(d.id);
+    if (!l) return;
     setState({
       modal: {
         kind: 'edit', id: l.id, freezer: l.freezer, dateIn: l.dateIn, monthOnly: !!l.monthOnly,
@@ -1566,11 +1759,12 @@ var ACTIONS = {
     });
   },
 
-  'edit-freezer': function (d) { S.modal.freezer = d.name; render(); },
-  'edit-unit': function (d) { S.modal.unit = d.unit; render(); },
+  'edit-freezer': function (d) { S.modal.notice = null; S.modal.freezer = d.name; render(); },
+  'edit-unit': function (d) { S.modal.notice = null; S.modal.unit = d.unit; render(); },
   'edit-note': function (d, el) { S.modal.note = el.value; },
 
   'edit-bump-weight': function (d) {
+    S.modal.notice = null;
     S.modal.weightG = Math.max(0, S.modal.weightG + Number(d.by));
     render();
   },
@@ -1581,6 +1775,7 @@ var ACTIONS = {
 
   'edit-add-count': function () { S.modal.count = 1; S.modal.unit = S.modal.unit || 'pieces'; render(); },
   'edit-bump-count': function (d) {
+    S.modal.notice = null;
     var next = S.modal.count + Number(d.by);
     S.modal.count = next < 1 ? (S.modal.weightG > 0 ? 0 : 1) : Math.min(999, next);
     render();
@@ -1598,18 +1793,21 @@ var ACTIONS = {
 
   /* --- splitting --- */
   'open-split': function (d) {
-    var l = lotById(d.id);
+    var l = requireLot(d.id);
+    if (!l) return;
     setState({ modal: { kind: 'split', id: d.id, into: l.count > 1 ? l.count : 2, back: S.modal } });
   },
   'bump-split': function (d) {
-    var l = lotById(S.modal.id);
+    var l = requireLot(S.modal.id);
+    if (!l) return;
     var max = l.count > 0 ? l.count : Math.min(99, l.weightG);
     S.modal.into = Math.max(2, Math.min(max, S.modal.into + Number(d.by)));
     render();
   },
   'set-split': function (d) { S.modal.into = Number(d.n); render(); },
   'type-split': function () {
-    var l = lotById(S.modal.id);
+    var l = requireLot(S.modal.id);
+    if (!l) return;
     setState({
       modal: {
         kind: 'keypad', target: 'split', digits: '', unit: 'bags',
@@ -1625,7 +1823,7 @@ var ACTIONS = {
     setState({ modal: { kind: 'rename', scope: d.scope, from: d.from, value: d.from } });
   },
   'rename-input': function (d, el) {
-    setState({ modal: Object.assign({}, S.modal, { value: el.value }) });
+    setState({ modal: Object.assign({}, S.modal, { value: el.value, notice: null }) });
   },
   'do-rename': function () { doRename(); },
 
@@ -1665,7 +1863,7 @@ function doAdd() {
     if (S.categories.indexOf(d.category) < 0) S.categories.push(d.category);
     S.recentAdds.unshift({ label: label, sub: sub, token: res.undo });
     S.recentAdds = S.recentAdds.slice(0, 8);
-    S.busy = false;
+    done();
     // Keep the freezer and date so a run of bagging-up stays quick.
     S.draft = Object.assign({}, BLANK_DRAFT, {
     freezer: d.freezer, dateIn: d.dateIn, monthOnly: d.monthOnly,
@@ -1692,7 +1890,7 @@ function doTake(ids) {
     S.inventory = S.inventory.filter(function (l) { return ids.indexOf(l.id) < 0; });
     S.recentTakes.unshift({ label: label, sub: sub, token: res.undo });
     S.recentTakes = S.recentTakes.slice(0, 8);
-    S.busy = false;
+    done();
     toast(label + ' taken out', res.undo);
   }).catch(function (e) {
     S.busy = false;
@@ -1719,7 +1917,7 @@ function doPart(id, value) {
     if (counted) lot.count -= value;
     S.recentTakes.unshift({ label: label, sub: 'out of the ' + lot.freezer + ' freezer · ' + lotSize(lot) + ' left', token: res.undo });
     S.recentTakes = S.recentTakes.slice(0, 8);
-    S.busy = false;
+    done();
     toast(label + ' taken out', res.undo);
   }).catch(function (e) {
     S.busy = false;
@@ -1737,7 +1935,7 @@ function doEdit() {
   api('apiEditLot', { id: m.id, patch: patch }).then(function (res) {
     var i = S.inventory.findIndex(function (l) { return l.id === m.id; });
     if (i > -1) S.inventory[i] = res.lot;
-    S.busy = false;
+    done();
     toast(res.lot.item + ' updated', res.undo);
   }).catch(function (e) {
     S.busy = false;
@@ -1751,7 +1949,7 @@ function doSplit(id, into) {
   setState({ busy: true, modal: null });
   api('apiSplitLot', { id: id, into: into }).then(function (res) {
     S.inventory = S.inventory.filter(function (l) { return l.id !== id; }).concat(res.lots);
-    S.busy = false;
+    done();
     toast(lot.item + ' split into ' + into + ' bags', res.undo);
   }).catch(function (e) {
     S.busy = false;
@@ -1770,7 +1968,7 @@ function doRename() {
   var fn = m.scope === 'item' ? 'apiRenameItem' : 'apiRenameCategory';
   setState({ busy: true, modal: null });
   api(fn, { from: m.from, to: to }).then(function (res) {
-    S.busy = false;
+    done();
     // A rename touches the catalogue and every view, so re-read rather than
     // trying to patch each one by hand.
     return load(false).then(function () {
@@ -1787,7 +1985,7 @@ function doUndo(token) {
   api('apiUndo', token).then(function () {
     S.recentAdds = S.recentAdds.filter(function (r) { return r.token !== token; });
     S.recentTakes = S.recentTakes.filter(function (r) { return r.token !== token; });
-    S.busy = false;
+    done();
     return load(false).then(function () { toast('Undone.'); });
   }).catch(function (e) {
     S.busy = false;
@@ -1799,6 +1997,8 @@ function doUndo(token) {
 
 function load(showToast) {
   return api('apiGetState').then(function (st) {
+    succeeded();
+    S.loadFailed = false;
     S.freezers = st.freezers;
     S.items = st.items;
     S.categories = st.categories;
@@ -1812,23 +2012,77 @@ function load(showToast) {
     render();
     if (showToast) toast('Reloaded from the spreadsheet.');
   }).catch(function (e) {
+    // Not "ready with nothing in it" — that is indistinguishable from an empty
+    // freezer, and the app then told the user to go and repair a spreadsheet
+    // that was perfectly fine. An unknown state is never drawn as a known one.
     S.ready = true;
+    S.loadFailed = true;
     render();
     fail(e);
   });
 }
 
+/**
+ * Constraint 2 refuses to hide latency, which means a round trip is always
+ * visible — one to two seconds in which the row you have just asked to remove
+ * is still sitting there looking tappable. Tapping it again is the natural
+ * response, and the second call then failed with "Those bags are no longer in
+ * the freezer": a red error for an action that had in fact succeeded.
+ *
+ * S.busy was already set by all seven operations and read by exactly one
+ * button. Refusing anything that writes, here, makes the protection deliberate
+ * rather than a side effect of the modal closing.
+ */
+function writesToSheet(act) {
+  return /^(do-|save-|undo-)/.test(act) || act === 'refresh';
+}
+
+/**
+ * Everywhere else the app trades confirmation for undo. The Edit dialog is the
+ * one place where a stray tap outside destroys work that was never committed,
+ * so there is nothing to undo — and a mis-tap beside a bottom sheet, on a
+ * tablet held at a freezer, is not a rare event.
+ */
+function tryCloseModal() {
+  if (modalIsDirty()) {
+    // Not a toast: showModal() puts the dialog in the top layer, so a toast
+    // would sit behind its own backdrop. The message belongs beside the
+    // controls it names anyway.
+    setState({ modal: Object.assign({}, S.modal, { notice: 'Tap Cancel to discard those changes, or Save changes to keep them.' }) });
+    return;
+  }
+  ACTIONS['close-modal']();
+}
+
 document.addEventListener('click', function (e) {
-  if (e.target.id === 'modal-host') return ACTIONS['close-modal']();
+  if (e.target.id === 'modal-host') return tryCloseModal();
   var el = e.target.closest('[data-act]');
   if (!el) return;
   var act = el.dataset.act;
   if (el.tagName === 'INPUT') return; // inputs act on `input`, not `click`
+  if (S.busy && writesToSheet(act)) return;
   if (ACTIONS[act]) {
     e.preventDefault();
     ACTIONS[act](el.dataset, el, e);
   }
 });
+
+/**
+ * The search boxes re-rendered up to 60 rows per character, and the pressure
+ * that created showed as three different answers to the same question: two
+ * inputs deliberately skipped render(), and a third reached into the DOM to
+ * toggle a button by hand. Debouncing lets all of them go back through
+ * setState, which is the only convention the app needs.
+ */
+var inputTimer = null;
+
+function debounced(fn) {
+  return function (d, el) {
+    var value = el.value;
+    clearTimeout(inputTimer);
+    inputTimer = setTimeout(function () { fn(value); }, 120);
+  };
+}
 
 document.addEventListener('input', function (e) {
   var el = e.target.closest('[data-act]');
@@ -1837,8 +2091,12 @@ document.addEventListener('input', function (e) {
   if (ACTIONS[act]) ACTIONS[act](el.dataset, el, e);
 });
 
-document.addEventListener('keydown', function (e) {
-  if (e.key === 'Escape' && S.modal) ACTIONS['close-modal']();
+// <dialog> closes itself on Escape; intercept so the same guard applies and
+// so S.modal stays in step with what is on screen.
+document.addEventListener('cancel', function (e) {
+  if (e.target.id !== 'modal-host') return;
+  e.preventDefault();
+  tryCloseModal();
 });
 
 window.addEventListener('offline', function () { setState({ offline: true }); });
