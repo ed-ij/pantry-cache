@@ -678,7 +678,7 @@ function renderView() {
         : 'The freezers are empty. Add something on the <b>Put in</b> tab.') +
       '</div>';
 
-  return head + body + renderSheetLink() + '</div>';
+  return head + body + renderRecentTakes() + renderSheetLink() + '</div>';
 }
 
 /**
@@ -1187,8 +1187,28 @@ function modalSplit(m) {
 }
 
 /** Renaming an item or a category, everywhere it appears. */
+/**
+ * Renaming onto a name that already exists merges the two, which is the right
+ * behaviour and a surprising one to discover afterwards. So the copy changes as
+ * soon as the typing collides with something.
+ */
+function renameCollision(m) {
+  var to = norm(tidyName(m.value));
+  if (!to || to === norm(m.from)) return null;
+  if (m.scope === 'item') {
+    var match = S.items.filter(function (it) { return norm(it.name) === to; })[0];
+    if (!match) return null;
+    var bags = S.inventory.filter(function (l) { return norm(l.item) === norm(m.from); }).length;
+    return 'There is already an item called &ldquo;' + esc(match.name) + '&rdquo;. ' +
+      (bags ? 'These ' + bags + (bags === 1 ? ' bag' : ' bags') + ' will join it.' : 'The two will be merged.');
+  }
+  var cat = S.categories.filter(function (c) { return norm(c) === to; })[0];
+  return cat ? 'There is already a group called &ldquo;' + esc(cat) + '&rdquo;. The two will be merged.' : null;
+}
+
 function modalRename(m) {
   var isItem = m.scope === 'item';
+  var collision = renameCollision(m);
   return wrap(
     '<h2 class="modal-title">Rename ' + (isItem ? 'this' : 'this group') + '</h2>' +
     '<p class="muted" style="margin-top:0">' +
@@ -1196,12 +1216,14 @@ function modalRename(m) {
         ? 'Every bag of &ldquo;' + esc(m.from) + '&rdquo; will take the new name, in the freezers and in the record of what has been used.'
         : 'Everything filed under &ldquo;' + esc(m.from) + '&rdquo; will move to the new name.') +
     '</p>' +
+    (collision ? '<div class="banner" style="margin-top:12px">' + collision + '</div>' : '') +
     '<input class="input input-hero" id="rename-input" type="text" style="margin-top:14px" ' +
       'value="' + esc(m.value) + '" data-act="rename-input">' +
     '<div class="row" style="margin-top:20px">' +
       '<button class="btn btn-ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
       '<button class="btn btn-primary" data-act="do-rename"' +
-        (m.value.trim() && m.value.trim() !== m.from ? '' : ' disabled') + '>Rename</button>' +
+        (tidyName(m.value) && norm(tidyName(m.value)) !== norm(m.from) ? '' : ' disabled') + '>' +
+        (collision ? 'Merge' : 'Rename') + '</button>' +
     '</div>'
   );
 }
@@ -1518,9 +1540,7 @@ var ACTIONS = {
     setState({ modal: { kind: 'rename', scope: d.scope, from: d.from, value: d.from } });
   },
   'rename-input': function (d, el) {
-    S.modal.value = el.value;
-    var btn = document.querySelector('[data-act="do-rename"]');
-    if (btn) btn.disabled = !el.value.trim() || el.value.trim() === S.modal.from;
+    setState({ modal: Object.assign({}, S.modal, { value: el.value }) });
   },
   'do-rename': function () { doRename(); },
 
@@ -1654,8 +1674,11 @@ function doSplit(id, into) {
 
 function doRename() {
   var m = S.modal;
-  var to = m.value.trim();
-  if (!to || to === m.from) return setState({ modal: null });
+  var to = tidyName(m.value);
+  // The backend runs cleanName over both names, so "Raspberries" and
+  // "raspberries" are the same rename to it. Comparing the raw strings here let
+  // that through, and the app then reported a rename that had not happened.
+  if (!to || norm(to) === norm(m.from)) return setState({ modal: null });
 
   var fn = m.scope === 'item' ? 'apiRenameItem' : 'apiRenameCategory';
   setState({ busy: true, modal: null });
@@ -1664,7 +1687,7 @@ function doRename() {
     // A rename touches the catalogue and every view, so re-read rather than
     // trying to patch each one by hand.
     return load(false).then(function () {
-      toast('Renamed to ' + to, res.undo);
+      toast(res.merged ? 'Merged into ' + to : 'Renamed to ' + to, res.undo);
     });
   }).catch(function (e) {
     S.busy = false;

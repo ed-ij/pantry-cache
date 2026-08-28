@@ -70,9 +70,10 @@ const DB = {
   },
 
   updateColumn(name, header, fn) {
+    const key = B.TABLES[name][0];
     let changed = 0;
     for (const row of store[name] || []) {
-      const next = fn(row[header]);
+      const next = fn(row[header], String(row[key] ?? '').trim());
       if (next !== undefined && next !== row[header]) {
         row[header] = next;
         changed++;
@@ -86,6 +87,21 @@ const DB = {
     const wanted = new Set(ids.map(String));
     store[name] = (store[name] || []).filter((r) => !wanted.has(String(r[key])));
   },
+
+  tokens: (() => {
+    const held = new Map();
+    return {
+      put(handle, value, ttlSeconds) {
+        held.set(handle, { value: JSON.parse(JSON.stringify(value)), until: Date.now() + ttlSeconds * 1000 });
+      },
+      take(handle) {
+        const row = held.get(handle);
+        if (!row) return null;
+        held.delete(handle);
+        return row.until < Date.now() ? null : row.value;
+      },
+    };
+  })(),
 
   lock(fn) {
     return fn();

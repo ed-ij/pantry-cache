@@ -31,9 +31,10 @@ const DB = {
     if (row) Object.assign(row, patch);
   },
   updateColumn(n, header, fn) {
+    const key = B.TABLES[n][0];
     let changed = 0;
     for (const row of store[n] || []) {
-      const next = fn(row[header]);
+      const next = fn(row[header], String(row[key] ?? '').trim());
       if (next !== undefined && next !== row[header]) { row[header] = next; changed++; }
     }
     return changed;
@@ -43,6 +44,21 @@ const DB = {
     const w = new Set(ids.map(String));
     store[n] = (store[n] || []).filter((r) => !w.has(String(r[key])));
   },
+  tokens: (() => {
+    const held = new Map();
+    return {
+      put(handle, value, ttlSeconds) {
+        held.set(handle, { value: JSON.parse(JSON.stringify(value)), until: Date.now() + ttlSeconds * 1000 });
+      },
+      take(handle) {
+        const row = held.get(handle);
+        if (!row) return null;
+        held.delete(handle);
+        return row.until < Date.now() ? null : row.value;
+      },
+    };
+  })(),
+
   lock: (fn) => fn(),
 };
 
@@ -83,7 +99,9 @@ assert.equal(store.History[0]['Date Out'], '2026-08-19');
 B.apiUndo(rm.undo);
 assert.equal(total(), 2000, 'bag is back');
 assert.equal(store.History.length, 0, 'history row removed');
-assert.throws(() => B.apiUndo(rm.undo), /already been undone/, 'undoing twice is refused');
+// A handle is burned on first use, so the second attempt cannot tell whether
+// it was spent, expired or never issued — and says so without guessing.
+assert.throws(() => B.apiUndo(rm.undo), /no longer be undone/, 'undoing twice is refused');
 
 /* --- taking part of a bag --- */
 const target = stock()[0];
@@ -99,7 +117,10 @@ assert.equal(store.History.length, 0);
 
 /* --- asking for more than is there takes the whole bag --- */
 const whole = B.apiRemovePart({ id: target.id, weightG: 9999 });
-assert.equal(whole.undo.type, 'remove', 'falls back to a whole-bag removal');
+// The token itself no longer leaves the server, so assert the behaviour
+// rather than its shape: the bag is gone from Inventory, not decremented.
+assert.equal(typeof whole.undo, 'string', 'the undo is an opaque handle');
+assert.ok(!stock().some((l) => l.id === target.id), 'falls back to a whole-bag removal');
 assert.equal(total(), 1500);
 B.apiUndo(whole.undo);
 
@@ -158,7 +179,7 @@ assert.equal(restored.weightG, 900, 'weight put back');
 
 /* asking for all of them falls through to a whole-bag removal */
 const allCobs = B.apiRemovePart({ id: cornLot, count: 99 });
-assert.equal(allCobs.undo.type, 'remove');
+assert.equal(typeof allCobs.undo, 'string', 'the undo is an opaque handle');
 B.apiUndo(allCobs.undo);
 
 B.apiUndo(noWeigh.undo);
@@ -284,7 +305,7 @@ B.apiSplitLot({ id: added2.lots[0].id, into: 4 });
 assert.equal(stock().length, 4, 'D4: split produced four bags');
 assert.throws(
   () => B.apiUndo(added2.undo),
-  /cannot be undone|has changed|no longer/i,
+  /no longer be undone|cannot be undone|has changed/i,
   'D4: a stale add-undo must say so rather than reporting success',
 );
 assert.equal(stock().length, 4, 'D4: nothing was touched by the refused undo');
@@ -299,7 +320,7 @@ const part2 = B.apiRemovePart({ id: corn2.lots[0].id, count: 2, dateOut: '2026-0
 B.apiEditLot({ id: corn2.lots[0].id, patch: { weightG: 100 } });
 assert.throws(
   () => B.apiUndo(part2.undo),
-  /cannot be undone|has changed|no longer/i,
+  /no longer be undone|cannot be undone|has changed/i,
   'D4: a part2-undo across an edit must refuse',
 );
 assert.equal(stock()[0].weightG, 100, 'D4: the edit survived the refused undo');
@@ -310,18 +331,39 @@ B.apiAdd({ item: 'French beans', category: 'Vegetables', freezer: 'Kitchen', wei
 B.apiAdd({ item: 'Runner beans', category: 'Vegetables', freezer: 'Kitchen', weightG: 300, qty: 3, dateIn: '2026-08-01' });
 const merged = B.apiRenameItem({ from: 'French beans', to: 'Runner beans' });
 assert.equal(stock().filter((l) => l.item === 'Runner beans').length, 5, 'D5: merge happened');
-if (merged.undo) {
-  B.apiUndo(merged.undo);
-  assert.equal(stock().filter((l) => l.item === 'French beans').length, 2, 'D5: only the two merged bags go back');
-  assert.equal(stock().filter((l) => l.item === 'Runner beans').length, 3, 'D5: the three originals stay put');
-}
+assert.ok(merged.merged, 'D5: the merge is reported to the caller');
+assert.ok(merged.undo, 'D5: a merge is still reversible');
+B.apiUndo(merged.undo);
+assert.equal(stock().filter((l) => l.item === 'French beans').length, 2, 'D5: only the two merged bags go back');
+assert.equal(stock().filter((l) => l.item === 'Runner beans').length, 3, 'D5: the three originals stay put');
+assert.ok(
+  B.apiGetState().items.some((i) => i.name === 'French beans'),
+  'D5: the dropped catalogue row is restored',
+);
+
+/* --- a case-only rename is refused rather than reported as a success --- */
+assert.throws(
+  () => B.apiRenameItem({ from: 'Runner beans', to: 'runner beans' }),
+  /already its name/i,
+  'a rename that cleanName collapses to the same string must say so',
+);
+
+/* --- undoing an add takes the catalogue row it created with it --- */
+fresh();
+const typo = B.apiAdd({ item: 'Rasberries', category: 'Fruit', freezer: 'Kitchen', weightG: 500, qty: 1, dateIn: '2026-08-01' });
+assert.ok(B.apiGetState().items.some((i) => i.name === 'Rasberries'), 'the typo is in the catalogue');
+B.apiUndo(typo.undo);
+assert.ok(
+  !B.apiGetState().items.some((i) => i.name === 'Rasberries'),
+  'undoing the add removes the catalogue row it created',
+);
 
 /* --- D3: an undo token the server never issued must be refused --- */
 fresh();
 const forged = B.apiAdd({ item: 'Figs', category: 'Fruit', freezer: 'Kitchen', weightG: 400, qty: 2, dateIn: '2026-08-01' });
 assert.throws(
   () => B.apiUndo({ type: 'add', ids: stock().map((l) => l.id) }),
-  /cannot be undone|not recognised|nothing to undo/i,
+  /no longer be undone|cannot be undone/i,
   'D3: a hand-written token must not be accepted as authority to delete',
 );
 assert.equal(stock().length, 2, 'D3: nothing was deleted by the forged token');
@@ -331,7 +373,7 @@ B.apiUndo(forged.undo);
 assert.equal(stock().length, 0, 'a genuine undo still works');
 assert.throws(
   () => B.apiUndo(forged.undo),
-  /already|cannot be undone|nothing to undo/i,
+  /no longer be undone|already/i,
   'a spent handle is refused the second time',
 );
 

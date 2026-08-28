@@ -184,8 +184,75 @@ function apiGetState() {
   };
 }
 
+/* -------------------------------------------------------------- undo tokens */
+
+/**
+ * Undo is what constraint 3 offers instead of confirmation dialogs, so it has
+ * to be worth relying on. It was not.
+ *
+ * Tokens used to be minted by the server, handed to the browser, and accepted
+ * back as authority to act — so a hand-written {type:'add', ids:[...]} would
+ * hard-delete rows with no History entry, which is the only unlogged
+ * destructive path in the application. And nothing checked whether the world
+ * had moved on, so undoing an add whose bags had since been split matched
+ * nothing and cheerfully reported "Undone."
+ *
+ * Now the server keeps the token and hands out a random handle. A handle is
+ * accepted once, then burned, and it expires. Each token carries a fingerprint
+ * of the rows it affects, taken when it was issued; if they have changed since,
+ * the undo refuses in English instead of doing something surprising.
+ */
+const UNDO_TTL_SECONDS = 900;
+
+/**
+ * A stable summary of the rows an action touched. Any later edit, split, part
+ * removal or rename changes it, which is exactly when an undo stops being safe.
+ */
+function fingerprint_(table, ids) {
+  const want = {};
+  (ids || []).forEach(function (id) { want[txt(id)] = true; });
+  return DB.getAll(table)
+    .filter(function (r) { return want[txt(r.ID)]; })
+    .map(function (r) {
+      return [
+        txt(r.ID), Math.round(num(r['Weight (g)'])), Math.round(num(r.Count)),
+        keyOf(r.Unit), keyOf(r.Freezer), normDate(r['Date In']),
+        keyOf(r.Item), keyOf(r.Category), txt(r.Note), normDate(r['Date Out']),
+      ].join('\u0001');
+    })
+    .sort()
+    .join('\u0002');
+}
+
+/**
+ * Stores the token and returns the handle the client should hold. `check`
+ * names the rows whose state the undo depends on; pass null where there is
+ * nothing meaningful to compare (an add has not created its rows yet).
+ */
+function issueUndo_(token, check) {
+  if (!token) return null;
+  if (check) {
+    token.check = {
+      table: check.table,
+      ids: check.ids,
+      print: fingerprint_(check.table, check.ids),
+    };
+  }
+  const handle = newId('U');
+  DB.tokens.put(handle, token, UNDO_TTL_SECONDS);
+  return handle;
+}
+
+function verifyUndo_(token) {
+  if (!token.check) return;
+  if (fingerprint_(token.check.table, token.check.ids) !== token.check.print) {
+    throw new Error('That has changed since, so this cannot be undone.');
+  }
+}
+
 /* --------------------------------------------------------------- write side */
 
+/** Returns true when it added a new row to the catalogue, false when it did not. */
 function ensureItemType(name, category, typicalG, typicalCount, unit) {
   const existing = DB.getAll('Items');
   for (let i = 0; i < existing.length; i++) {
@@ -194,7 +261,7 @@ function ensureItemType(name, category, typicalG, typicalCount, unit) {
     if (unit && !txt(existing[i].Unit)) {
       DB.updateById('Items', existing[i].Item, { Unit: unit, 'Typical count': typicalCount || '' });
     }
-    return;
+    return false;
   }
   DB.append('Items', [{
     Item: name,
@@ -203,6 +270,7 @@ function ensureItemType(name, category, typicalG, typicalCount, unit) {
     'Typical count': typicalCount || '',
     Unit: unit || '',
   }]);
+  return true;
 }
 
 /**
@@ -230,7 +298,7 @@ function apiAdd(p) {
     const dateIn = normDate(p.dateIn) || DB.today();
     const note = txt(p.note);
 
-    ensureItemType(item, category, weightG, count, unit);
+    const itemCreated = ensureItemType(item, category, weightG, count, unit);
 
     const rows = [];
     for (let i = 0; i < qty; i++) {
@@ -248,9 +316,17 @@ function apiAdd(p) {
     }
     DB.append('Inventory', rows);
 
+    const ids = rows.map(function (r) { return r.ID; });
     return {
       lots: rows.map(toLot),
-      undo: { type: 'add', ids: rows.map(function (r) { return r.ID; }) },
+      // itemCreated: undoing an add used to leave behind the Items row it had
+      // just created, so a typo added and immediately undone stayed in the
+      // catalogue for ever — as a tile with no bags, which the app gives no
+      // way to rename or remove.
+      undo: issueUndo_(
+        { type: 'add', ids: ids, itemCreated: itemCreated ? item : null },
+        { table: 'Inventory', ids: ids },
+      ),
     };
   });
 }
@@ -296,7 +372,10 @@ function removeWhole_(ids, dateOutRaw) {
   DB.append('History', histRows);
   DB.deleteByIds('Inventory', foundIds);
 
-  return { removed: histRows.map(toLot), undo: { type: 'remove', ids: foundIds } };
+  return {
+    removed: histRows.map(toLot),
+    undo: issueUndo_({ type: 'remove', ids: foundIds }, { table: 'History', ids: foundIds }),
+  };
 }
 
 /** Takes whole bags out: moves them from Inventory to History. */
@@ -362,7 +441,12 @@ function apiRemovePart(p) {
       Count: haveC - takeC || '',
     });
 
-    return { undo: { type: 'part', id: id, weightG: takeW, count: takeC, historyId: historyId } };
+    return {
+      undo: issueUndo_(
+        { type: 'part', id: id, weightG: takeW, count: takeC, historyId: historyId },
+        { table: 'Inventory', ids: [id] },
+      ),
+    };
   });
 }
 
@@ -399,7 +483,7 @@ function apiEditLot(p) {
     DB.updateById('Inventory', id, patch);
     return {
       lot: toLot(Object.assign({}, lot, patch)),
-      undo: { type: 'edit', id: id, before: before },
+      undo: issueUndo_({ type: 'edit', id: id, before: before }, { table: 'Inventory', ids: [id] }),
     };
   });
 }
@@ -454,48 +538,131 @@ function apiSplitLot(p) {
     DB.append('Inventory', rows);
     DB.deleteByIds('Inventory', [id]);
 
+    const childIds = rows.map(function (r) { return r.ID; });
     return {
       lots: rows.map(toLot),
-      undo: { type: 'split', ids: rows.map(function (r) { return r.ID; }), original: lot },
+      undo: issueUndo_(
+        { type: 'split', ids: childIds, original: lot },
+        { table: 'Inventory', ids: childIds },
+      ),
     };
   });
 }
 
-/** Renames one item everywhere it appears. Unlocked; callers hold the lock. */
+/**
+ * Renames one item everywhere it appears. Unlocked; callers hold the lock.
+ *
+ * Returns the rows it actually changed. That is the whole point: renaming
+ * "French beans" onto an existing "Runner beans" merges them, and an undo that
+ * knew only the two names would rename *every* Runner beans back — including
+ * the bags that were always called that.
+ */
 function renameItem_(from, to) {
-  const matches = function (v) { return keyOf(v) === keyOf(from) ? to : undefined; };
-  let n = DB.updateColumn('Inventory', 'Item', matches);
-  n += DB.updateColumn('History', 'Item', matches);
+  const touched = { Inventory: [], History: [] };
+
+  const rename = function (table) {
+    return function (v, id) {
+      if (keyOf(v) !== keyOf(from)) return undefined;
+      touched[table].push(id);
+      return to;
+    };
+  };
+
+  let n = DB.updateColumn('Inventory', 'Item', rename('Inventory'));
+  n += DB.updateColumn('History', 'Item', rename('History'));
 
   // If the new name is already in the catalogue, merging means dropping the
-  // old row rather than creating a second entry under the same name.
+  // old row rather than creating a second entry under the same name. Keep the
+  // dropped row so an undo can put it back.
   const items = DB.getAll('Items');
   const hasTarget = items.some(function (r) { return keyOf(r.Item) === keyOf(to); });
   const source = items.filter(function (r) { return keyOf(r.Item) === keyOf(from); })[0];
-  if (source && hasTarget) DB.deleteByIds('Items', [txt(source.Item)]);
-  else DB.updateColumn('Items', 'Item', matches);
+  let dropped = null;
+  if (source && hasTarget) {
+    dropped = source;
+    DB.deleteByIds('Items', [txt(source.Item)]);
+  } else if (source) {
+    DB.updateColumn('Items', 'Item', function (v) {
+      return keyOf(v) === keyOf(from) ? to : undefined;
+    });
+  }
 
   if (!n && !source) throw new Error('Nothing called \u201c' + from + '\u201d to rename.');
-  return n;
+  return { renamed: n, touched: touched, dropped: dropped, merged: !!dropped };
+}
+
+/** Puts back exactly the rows a rename touched, and nothing else. */
+function undoRenameItem_(token) {
+  ['Inventory', 'History'].forEach(function (table) {
+    const only = {};
+    (token.touched[table] || []).forEach(function (id) { only[txt(id)] = true; });
+    if (!Object.keys(only).length) return;
+    DB.updateColumn(table, 'Item', function (v, id) {
+      return only[txt(id)] ? token.back : undefined;
+    });
+  });
+
+  if (token.dropped) {
+    DB.append('Items', [token.dropped]);
+  } else {
+    DB.updateColumn('Items', 'Item', function (v) {
+      return keyOf(v) === keyOf(token.forward) ? token.back : undefined;
+    });
+  }
 }
 
 function renameCategory_(from, to) {
-  const matches = function (v) { return keyOf(v) === keyOf(from) ? to : undefined; };
-  const n = DB.updateColumn('Inventory', 'Category', matches)
-    + DB.updateColumn('History', 'Category', matches)
-    + DB.updateColumn('Items', 'Category', matches);
+  const touched = { Inventory: [], History: [], Items: [] };
+
+  const rename = function (table) {
+    return function (v, id) {
+      if (keyOf(v) !== keyOf(from)) return undefined;
+      touched[table].push(id);
+      return to;
+    };
+  };
+
+  const n = DB.updateColumn('Inventory', 'Category', rename('Inventory'))
+    + DB.updateColumn('History', 'Category', rename('History'))
+    + DB.updateColumn('Items', 'Category', rename('Items'));
   if (!n) throw new Error('Nothing filed under \u201c' + from + '\u201d to rename.');
-  return n;
+  return { renamed: n, touched: touched };
+}
+
+function undoRenameCategory_(token) {
+  ['Inventory', 'History', 'Items'].forEach(function (table) {
+    const only = {};
+    (token.touched[table] || []).forEach(function (id) { only[txt(id)] = true; });
+    if (!Object.keys(only).length) return;
+    DB.updateColumn(table, 'Category', function (v, id) {
+      return only[txt(id)] ? token.back : undefined;
+    });
+  });
 }
 
 function apiRenameItem(p) {
   const from = cleanName(p && p.from);
   const to = cleanName(p && p.to);
   if (!from || !to) throw new Error('Please give the new name.');
-  if (from === to) return { renamed: 0, undo: null };
+  if (keyOf(from) === keyOf(to)) {
+    // "Raspberries" -> "raspberries" is the same name once cleaned. Say so,
+    // rather than reloading and reporting a rename that did not happen.
+    throw new Error('That is already its name.');
+  }
   return DB.lock(function () {
     DB.ensure();
-    return { renamed: renameItem_(from, to), undo: { type: 'rename-item', from: to, to: from } };
+    const res = renameItem_(from, to);
+    return {
+      renamed: res.renamed,
+      merged: res.merged,
+      undo: issueUndo_(
+        {
+          type: 'rename-item', forward: to, back: from,
+          touched: res.touched, dropped: res.dropped,
+        },
+        { table: 'Inventory', ids: res.touched.Inventory },
+      ),
+    };
   });
 }
 
@@ -503,21 +670,45 @@ function apiRenameCategory(p) {
   const from = cleanName(p && p.from);
   const to = cleanName(p && p.to);
   if (!from || !to) throw new Error('Please give the new name.');
-  if (from === to) return { renamed: 0, undo: null };
+  if (keyOf(from) === keyOf(to)) throw new Error('That is already its name.');
   return DB.lock(function () {
     DB.ensure();
-    return { renamed: renameCategory_(from, to), undo: { type: 'rename-category', from: to, to: from } };
+    const res = renameCategory_(from, to);
+    return {
+      renamed: res.renamed,
+      undo: issueUndo_(
+        { type: 'rename-category', forward: to, back: from, touched: res.touched },
+        { table: 'Inventory', ids: res.touched.Inventory },
+      ),
+    };
   });
 }
 
-/** Reverses the last action. `token` is the `undo` object returned above. */
-function apiUndo(token) {
+/**
+ * Reverses one action. `handle` is the opaque string the mutating call returned
+ * — the token itself never leaves the server, and a handle works exactly once.
+ */
+function apiUndo(handle) {
   return DB.lock(function () {
     DB.ensure();
-    if (!token || !token.type) throw new Error('Nothing to undo.');
+
+    const token = DB.tokens.take(txt(handle));
+    if (!token || !token.type) {
+      // Covers all three ways this happens — expired, already used, or never
+      // issued — without accusing anyone of the third.
+      throw new Error('That can no longer be undone.');
+    }
+    verifyUndo_(token);
 
     if (token.type === 'add') {
       DB.deleteByIds('Inventory', token.ids || []);
+      // An add that introduced a new item also created its catalogue row.
+      // Leaving that behind is how a typo becomes permanent.
+      if (token.itemCreated) {
+        const stillUsed = DB.getAll('Inventory').concat(DB.getAll('History'))
+          .some(function (r) { return keyOf(r.Item) === keyOf(token.itemCreated); });
+        if (!stillUsed) DB.deleteByIds('Items', [token.itemCreated]);
+      }
       return { ok: true };
     }
 
@@ -567,15 +758,15 @@ function apiUndo(token) {
 
     // Already inside the lock, so the unlocked helpers are used directly.
     if (token.type === 'rename-item') {
-      renameItem_(cleanName(token.from), cleanName(token.to));
+      undoRenameItem_(token);
       return { ok: true };
     }
 
     if (token.type === 'rename-category') {
-      renameCategory_(cleanName(token.from), cleanName(token.to));
+      undoRenameCategory_(token);
       return { ok: true };
     }
 
-    throw new Error('Nothing to undo.');
+    throw new Error('That can no longer be undone.');
   });
 }

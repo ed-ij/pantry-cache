@@ -155,11 +155,15 @@ const DB = {
     const last = sh.getLastRow();
     if (col < 0 || last < 2) return 0;
 
+    // Column A alongside, so `fn` can decide per row rather than only per
+    // value — which is what lets an undo touch exactly the rows its own
+    // rename touched, and no others.
+    const keys = sh.getRange(2, 1, last - 1, 1).getValues();
     const range = sh.getRange(2, col + 1, last - 1, 1);
     const values = range.getValues();
     let changed = 0;
     for (let i = 0; i < values.length; i++) {
-      const next = fn(values[i][0]);
+      const next = fn(values[i][0], txt(keys[i][0]));
       if (next !== undefined && next !== values[i][0]) {
         values[i][0] = next;
         changed++;
@@ -188,6 +192,32 @@ const DB = {
     // Delete bottom-up so earlier row numbers stay valid.
     for (let i = targets.length - 1; i >= 0; i--) sh.deleteRow(targets[i]);
     CACHE_ = {};
+  },
+
+  /**
+   * Undo tokens live here rather than in the browser, so that a token cannot be
+   * hand-written and handed back as authority to delete rows. CacheService is
+   * the right fit: it expires on its own and needs no extra tab in the sheet.
+   * Losing one to a cache eviction costs an undo, which the dialog already
+   * explains in English.
+   */
+  tokens: {
+    put: function (handle, value, ttlSeconds) {
+      CacheService.getScriptCache().put('undo:' + handle, JSON.stringify(value), ttlSeconds);
+    },
+    take: function (handle) {
+      if (!handle) return null;
+      const cache = CacheService.getScriptCache();
+      const key = 'undo:' + handle;
+      const raw = cache.get(key);
+      if (!raw) return null;
+      cache.remove(key);
+      try {
+        return JSON.parse(raw);
+      } catch (err) {
+        return null;
+      }
+    },
   },
 
   lock: function (fn) {
