@@ -27,6 +27,7 @@ function spreadsheet_() {
 
 /** Per-execution cache of sheet contents; cleared whenever we write. */
 let CACHE_ = {};
+let HEADERS_ = {};
 
 const DB = {
   /**
@@ -50,15 +51,26 @@ const DB = {
         sh = ss.insertSheet(name);
         created = true;
       }
-      const width = headers.length;
-      const current = sh.getLastRow() > 0 ? sh.getRange(1, 1, 1, width).getValues()[0] : [];
-      if (current.join(' ') !== headers.join(' ')) {
-        sh.getRange(1, 1, 1, width).setValues([headers]);
+      // Row 1 is the contract between the sheet and this code. It used to be
+      // overwritten whenever it did not match — which is the worst possible
+      // response to an inserted column: the values stay shifted and the
+      // evidence that anything is wrong is erased. Now missing headers are
+      // appended (constraint 9), and anything else is refused out loud.
+      const existing = headerRow_(sh);
+      const missing = headers.filter(function (h) { return existing.indexOf(h) < 0; });
+      if (!existing.length) {
+        sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+        HEADERS_ = {};
+      } else if (missing.length) {
+        sh.getRange(1, existing.length + 1, 1, missing.length).setValues([missing]);
+        HEADERS_ = {};
       }
+      const width = Math.max(headerRow_(sh).length, headers.length);
       sh.getRange(1, 1, 1, width).setFontWeight('bold').setBackground('#e8eef5');
       sh.setFrozenRows(1);
 
-      headers.forEach(function (h, i) {
+      const laidOut = headerRow_(sh);
+      laidOut.forEach(function (h, i) {
         const rows = Math.max(sh.getMaxRows() - 1, 1);
         if (DATE_COLUMNS.indexOf(h) >= 0) {
           sh.getRange(2, i + 1, rows, 1).setNumberFormat('dd mmm yyyy');
@@ -96,8 +108,13 @@ const DB = {
     if (CACHE_[name]) return CACHE_[name];
     const sh = sheet_(name);
     const last = sh.getLastRow();
-    const headers = TABLES[name];
-    if (last < 2) {
+    // Read what row 1 actually says rather than assuming TABLES' order. Insert
+    // a column and every read used to shift by one — notes became counts,
+    // weights became dates — with nothing to notice it. Reordering and inserted
+    // columns now cost nothing, which is what makes constraint 1 safe rather
+    // than merely stated.
+    const headers = headerRow_(sh);
+    if (last < 2 || !headers.length) {
       CACHE_[name] = [];
       return CACHE_[name];
     }
@@ -107,6 +124,7 @@ const DB = {
       .map(function (row) {
         const obj = {};
         headers.forEach(function (h, i) {
+          if (!h) return;
           let v = row[i];
           if (v instanceof Date) v = Utilities.formatDate(v, tz, 'yyyy-MM-dd');
           obj[h] = v;
@@ -115,7 +133,7 @@ const DB = {
       })
       .filter(function (obj) {
         // Skip rows the user has blanked out in the sheet.
-        return headers.some(function (h) { return txt(obj[h]) !== ''; });
+        return headers.some(function (h) { return h && txt(obj[h]) !== ''; });
       });
     return CACHE_[name];
   },
@@ -123,17 +141,18 @@ const DB = {
   append: function (name, objs) {
     if (!objs || !objs.length) return;
     const sh = sheet_(name);
-    const headers = TABLES[name];
+    const headers = headerRow_(sh);
     const rows = objs.map(function (o) {
-      return headers.map(function (h) { return toCell_(h, o[h]); });
+      return headers.map(function (h) { return h in o ? toCell_(h, o[h]) : ''; });
     });
     sh.getRange(sh.getLastRow() + 1, 1, rows.length, headers.length).setValues(rows);
     CACHE_ = {};
+    HEADERS_ = {};
   },
 
   updateById: function (name, id, patch) {
     const sh = sheet_(name);
-    const headers = TABLES[name];
+    const headers = headerRow_(sh);
     const rowIndex = findRow_(sh, id);
     if (rowIndex < 0) return;
     Object.keys(patch).forEach(function (h) {
@@ -142,6 +161,7 @@ const DB = {
       sh.getRange(rowIndex, col + 1).setValue(toCell_(h, patch[h]));
     });
     CACHE_ = {};
+    HEADERS_ = {};
   },
 
   /**
@@ -151,7 +171,7 @@ const DB = {
    */
   updateColumn: function (name, header, fn) {
     const sh = sheet_(name);
-    const col = TABLES[name].indexOf(header);
+    const col = headerRow_(sh).indexOf(header);
     const last = sh.getLastRow();
     if (col < 0 || last < 2) return 0;
 
@@ -172,6 +192,7 @@ const DB = {
     if (changed) {
       range.setValues(values);
       CACHE_ = {};
+      HEADERS_ = {};
     }
     return changed;
   },
@@ -192,6 +213,7 @@ const DB = {
     // Delete bottom-up so earlier row numbers stay valid.
     for (let i = targets.length - 1; i >= 0; i--) sh.deleteRow(targets[i]);
     CACHE_ = {};
+    HEADERS_ = {};
   },
 
   /**
@@ -227,10 +249,24 @@ const DB = {
       return fn();
     } finally {
       CACHE_ = {};
+      HEADERS_ = {};
       lock.releaseLock();
     }
   },
 };
+
+/**
+ * Row 1, as it actually is. Cached per execution alongside the values, since
+ * every read and write now consults it.
+ */
+function headerRow_(sh) {
+  const name = sh.getName();
+  if (HEADERS_[name]) return HEADERS_[name];
+  if (sh.getLastRow() < 1 || sh.getLastColumn() < 1) return [];
+  HEADERS_[name] = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]
+    .map(function (h) { return txt(h); });
+  return HEADERS_[name];
+}
 
 function sheet_(name) {
   const ss = spreadsheet_();

@@ -97,6 +97,17 @@ function fmtDate(iso) {
   return parseISO(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+/**
+ * Constraint 5: the month is what matters, the day is a bonus. Where the day
+ * was never known — backdating to "Jul 2025" stores the 1st, because a date
+ * cell has to hold something — say the month and stop, rather than showing an
+ * invented day in the same typeface as a real one.
+ */
+function fmtWhen(lot) {
+  if (!lot || !lot.dateIn) return 'date not recorded';
+  return lot.monthOnly ? fmtMonth(lot.dateIn) : fmtDate(lot.dateIn);
+}
+
 function fmtMonth(iso) {
   if (!iso) return '—';
   return parseISO(iso).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
@@ -117,6 +128,24 @@ function ageText(iso) {
 }
 
 function norm(s) { return String(s || '').trim().toLowerCase(); }
+
+/**
+ * Oldest first, with undated bags last rather than first.
+ *
+ * An empty date sorts before every real one, so a cleared or unreadable date
+ * cell used to pin its bag to the top of every oldest-first list and take the
+ * "use first" badge with it. Constraint 1 makes the sheet hand-editable on
+ * purpose, so that is a state the design invited.
+ */
+function byAge(a, b) {
+  if (!a.dateIn !== !b.dateIn) return a.dateIn ? -1 : 1;
+  return (a.dateIn || '').localeCompare(b.dateIn || '') || a.item.localeCompare(b.item);
+}
+
+/** A bag with no readable date cannot be the one to use first. */
+function datedFirst(lots) {
+  return lots.filter(function (l) { return l.dateIn; });
+}
 
 var GRAMS_PER_OZ = 28.349523125;
 
@@ -195,7 +224,7 @@ function groupBy(list, key) {
 
 var BLANK_DRAFT = {
   item: '', category: '', weightG: 500, count: 0, unit: '', qty: 1,
-  freezer: '', dateIn: '', note: '', showNote: false, showCount: false,
+  freezer: '', dateIn: '', monthOnly: false, note: '', showNote: false, showCount: false,
 };
 
 /** Words that come up often enough to be worth one tap. */
@@ -220,6 +249,7 @@ var S = {
   items: [],
   categories: [],
   inventory: [],
+  problems: [],
   sheetUrl: '',
 
   query: '',
@@ -491,7 +521,9 @@ function renderAddDetails() {
       dot(f.colour) + esc(f.name) + '</button>';
   }).join('');
 
-  var dateLabel = d.dateIn === S.today ? 'Today &middot; ' + esc(fmtDate(d.dateIn)) : esc(fmtDate(d.dateIn));
+  var dateLabel = d.dateIn === S.today && !d.monthOnly
+    ? 'Today &middot; ' + esc(fmtDate(d.dateIn))
+    : esc(fmtWhen({ dateIn: d.dateIn, monthOnly: d.monthOnly }));
 
   return '<div class="stack">' +
 
@@ -658,6 +690,7 @@ function renderView() {
     }).join('');
 
   var head = '<div class="stack">' +
+    renderProblems() +
     '<div class="summary">' +
       totalStat(inv) +
       stat(String(inv.length), inv.length === 1 ? 'Bag / tub' : 'Bags / tubs') +
@@ -679,6 +712,31 @@ function renderView() {
       '</div>';
 
   return head + body + renderRecentTakes() + renderSheetLink() + '</div>';
+}
+
+/**
+ * Cells the sheet could not be read from. The old parsers had no failure mode —
+ * "1.5kg" in a column headed Weight (g) silently became 2 grams — so this is
+ * the other half of that fix: say which row, say what was in it, and point at
+ * the spreadsheet, which is where it gets corrected.
+ */
+function renderProblems() {
+  if (!S.problems.length) return '';
+  var lines = S.problems.slice(0, 6).map(function (p) {
+    return '<li>' + esc(p.item || 'A bag') + ' &mdash; ' + esc(p.field) +
+      ' reads &ldquo;' + esc(p.raw) + '&rdquo;</li>';
+  }).join('');
+  var more = S.problems.length > 6 ? '<li>&hellip;and ' + (S.problems.length - 6) + ' more</li>' : '';
+  return '<div class="banner" style="display:block">' +
+    '<div style="font-weight:700">' +
+      (S.problems.length === 1
+        ? 'One cell in the spreadsheet could not be read'
+        : S.problems.length + ' cells in the spreadsheet could not be read') +
+    '</div>' +
+    '<ul style="margin:8px 0 0;padding-left:20px;font-weight:500">' + lines + more + '</ul>' +
+    '<div class="small" style="margin-top:8px;font-weight:500">' +
+      'Those are being counted as nothing. Open the spreadsheet below to put them right.</div>' +
+    '</div>';
 }
 
 /**
@@ -719,9 +777,7 @@ function totalStat(lots) {
  * readable at a glance rather than something you have to work out.
  */
 function renderByAge(inv) {
-  var sorted = inv.slice().sort(function (a, b) {
-    return (a.dateIn || '').localeCompare(b.dateIn || '') || a.item.localeCompare(b.item);
-  });
+  var sorted = inv.slice().sort(byAge);
   var shown = sorted.slice(0, S.viewLimit);
   var oneFreezer = S.viewFreezer !== 'all';
 
@@ -731,14 +787,16 @@ function renderByAge(inv) {
     var month = (l.dateIn || '').slice(0, 7);
     if (month !== lastMonth) {
       lastMonth = month;
-      html += '<div class="group-head">' + esc(fmtMonth(l.dateIn)) +
-        ' <span class="group-meta">' + esc(ageText(l.dateIn)) + '</span></div>';
+      html += '<div class="group-head">' +
+        (l.dateIn ? esc(fmtMonth(l.dateIn)) + ' <span class="group-meta">' + esc(ageText(l.dateIn)) + '</span>'
+                  : 'No date recorded <span class="group-meta">fix these in the spreadsheet</span>') +
+        '</div>';
     }
     html += '<button class="row-btn" data-act="ask-take" data-id="' + esc(l.id) + '">' +
       '<div class="row-main"><div class="row-name">' + esc(l.item) + '</div>' +
       '<div class="row-meta">' +
       (oneFreezer ? '' : '<span class="badge badge-freezer">' + dot(freezerColour(l.freezer)) + '' + esc(l.freezer) + '</span> ') +
-      esc(fmtDate(l.dateIn)) + (l.note ? ' &middot; ' + esc(l.note) : '') + '</div></div>' +
+      esc(fmtWhen(l)) + (l.note ? ' &middot; ' + esc(l.note) : '') + '</div></div>' +
       '<div class="row-right"><div class="row-strong">' + esc(lotSize(l)) + '</div></div>' +
       '<span class="row-chevron">&rsaquo;</span></button>';
   });
@@ -783,8 +841,8 @@ function renderByItem(inv) {
 function itemRow(lots, key, freezerContext) {
   var open = !!S.open[key];
   var totals = lotsSize(lots);
-  var sorted = lots.slice().sort(function (a, b) { return (a.dateIn || '').localeCompare(b.dateIn || ''); });
-  var oldest = sorted[0];
+  var sorted = lots.slice().sort(byAge);
+  var oldest = datedFirst(sorted)[0];
 
   var meta = lots.length + (lots.length === 1 ? ' bag' : ' bags');
   if (!freezerContext) {
@@ -799,9 +857,11 @@ function itemRow(lots, key, freezerContext) {
     ? '<div class="lots">' + sorted.map(function (l, i) {
         return '<div class="lot">' +
           '<span class="lot-weight">' + esc(lotSize(l)) + '</span>' +
-          '<span class="lot-date">' + esc(fmtMonth(l.dateIn)) + ' &middot; ' + esc(ageText(l.dateIn)) + '</span>' +
+          '<span class="lot-date">' +
+            (l.dateIn ? esc(fmtWhen(l)) + ' &middot; ' + esc(ageText(l.dateIn)) : 'date not recorded') +
+          '</span>' +
           (freezerContext ? '' : '<span class="badge badge-freezer">' + dot(freezerColour(l.freezer)) + '' + esc(l.freezer) + '</span>') +
-          (i === 0 && sorted.length > 1 ? '<span class="badge badge-warm">use first</span>' : '') +
+          (l.dateIn && l === oldest && sorted.length > 1 ? '<span class="badge badge-warm">use first</span>' : '') +
           (l.note ? '<span class="lot-date">' + esc(l.note) + '</span>' : '') +
           '<span class="spacer"></span>' +
           '<button class="btn btn-ghost" style="min-height:2.6rem" data-act="ask-take" data-id="' + esc(l.id) + '">Take out</button>' +
@@ -816,7 +876,8 @@ function itemRow(lots, key, freezerContext) {
 
   return '<button class="row-btn" data-act="toggle-open" data-key="' + esc(key) + '">' +
     '<div class="row-main"><div class="row-name">' + esc(lots[0].item) + '</div>' +
-    '<div class="row-meta">' + meta + ' &middot; oldest ' + esc(fmtMonth(oldest.dateIn)) + '</div></div>' +
+    '<div class="row-meta">' + meta +
+      (oldest ? ' &middot; oldest ' + esc(fmtMonth(oldest.dateIn)) : ' &middot; no dates recorded') + '</div></div>' +
     '<div class="row-right"><div class="row-strong">' + esc(totals[0]) + '</div>' +
     (totals.length > 1 ? '<div class="row-sub">' + esc(totals.slice(1).join(' \u00b7 ')) + '</div>' : '') + '</div>' +
     '<span class="row-chevron">' + (open ? '&#9662;' : '&rsaquo;') + '</span></button>' + detail;
@@ -829,9 +890,7 @@ function renderTake() {
   if (S.takeFreezer !== 'all') lots = lots.filter(function (l) { return l.freezer === S.takeFreezer; });
   var q = norm(S.takeSearch);
   if (q) lots = lots.filter(function (l) { return norm(l.item).indexOf(q) > -1 || norm(l.category).indexOf(q) > -1; });
-  lots.sort(function (a, b) {
-    return (a.dateIn || '').localeCompare(b.dateIn || '') || a.item.localeCompare(b.item);
-  });
+  lots.sort(byAge);
 
   var oldestSeen = {};
   var shown = lots.slice(0, S.takeLimit);
@@ -843,13 +902,14 @@ function renderTake() {
     }).join('');
 
   var rows = shown.map(function (l) {
-    var first = !oldestSeen[norm(l.item)];
-    oldestSeen[norm(l.item)] = 1;
+    var first = l.dateIn && !oldestSeen[norm(l.item)];
+    if (l.dateIn) oldestSeen[norm(l.item)] = 1;
     return '<button class="row-btn" data-act="ask-take" data-id="' + esc(l.id) + '">' +
       '<div class="row-main"><div class="row-name">' + esc(l.item) +
         (first ? ' <span class="badge badge-warm">use first</span>' : '') + '</div>' +
       '<div class="row-meta"><span class="badge badge-freezer">' + dot(freezerColour(l.freezer)) + '' + esc(l.freezer) + '</span> ' +
-      'frozen ' + esc(fmtMonth(l.dateIn)) + ' &middot; ' + esc(ageText(l.dateIn)) + (l.note ? ' &middot; ' + esc(l.note) : '') + '</div></div>' +
+      (l.dateIn ? 'frozen ' + esc(fmtWhen(l)) + ' &middot; ' + esc(ageText(l.dateIn)) : 'date not recorded') +
+      (l.note ? ' &middot; ' + esc(l.note) : '') + '</div></div>' +
       '<div class="row-right"><div class="row-strong">' + esc(lotSize(l)) + '</div></div>' +
       '<span class="row-chevron">&rsaquo;</span></button>';
   }).join('');
@@ -994,10 +1054,13 @@ function modalKeypad(m) {
 function modalDate(m) {
   var months = [];
   var d = parseISO(S.today);
-  for (var i = 1; i <= 8; i++) {
+  // Eighteen, not eight: produce is annual, and someone cataloguing a freezer
+  // that has been filling up for two years is the normal first use of this app.
+  for (var i = 1; i <= 18; i++) {
     var x = new Date(d.getFullYear(), d.getMonth() - i, 1);
     var iso = x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-01';
-    months.push('<button class="chip" data-act="set-date" data-date="' + iso + '">' +
+    months.push('<button class="chip' + (m.value === iso && m.monthOnly ? ' is-on' : '') + '" ' +
+      'data-act="set-date" data-date="' + iso + '" data-month-only="1">' +
       x.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) + '</button>');
   }
   var yest = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1);
@@ -1007,8 +1070,10 @@ function modalDate(m) {
     '<h2 class="modal-title">When did it go in?</h2>' +
     '<p class="muted" style="margin-top:0">The month is what matters most &mdash; pick the exact day if you know it.</p>' +
     '<div class="chips">' +
-      '<button class="chip" data-act="set-date" data-date="' + S.today + '">Today</button>' +
-      '<button class="chip" data-act="set-date" data-date="' + yestISO + '">Yesterday</button>' +
+      '<button class="chip' + (m.value === S.today && !m.monthOnly ? ' is-on' : '') +
+        '" data-act="set-date" data-date="' + S.today + '">Today</button>' +
+      '<button class="chip' + (m.value === yestISO && !m.monthOnly ? ' is-on' : '') +
+        '" data-act="set-date" data-date="' + yestISO + '">Yesterday</button>' +
     '</div>' +
     '<div class="section-title" style="margin:18px 0 8px">Earlier months</div>' +
     '<div class="chips">' + months.join('') + '</div>' +
@@ -1016,7 +1081,8 @@ function modalDate(m) {
     '<input class="input" id="date-input" type="date" max="' + S.today + '" value="' + esc(m.value) + '" data-act="date-input"></div>' +
     '<div class="row" style="margin-top:20px">' +
       '<button class="btn btn-ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
-      '<button class="btn btn-primary" data-act="set-date" data-date="' + esc(m.value) + '">Use ' + esc(fmtDate(m.value)) + '</button>' +
+      '<button class="btn btn-primary" data-act="set-date" data-date="' + esc(m.value) + '">Use ' +
+        esc(fmtWhen({ dateIn: m.value, monthOnly: m.monthOnly })) + '</button>' +
     '</div>'
   );
 }
@@ -1031,8 +1097,9 @@ function modalTake(m) {
   var splittable = l.count > 1 || (!l.count && l.weightG > 100);
   return wrap(
     '<h2 class="modal-title">' + esc(l.item) + '</h2>' +
-    '<p class="muted" style="margin-top:0">' + esc(lotSize(l)) + ' in the ' + esc(l.freezer) + ' freezer &middot; frozen ' +
-      esc(fmtMonth(l.dateIn)) + ' (' + esc(ageText(l.dateIn)) + ')</p>' +
+    '<p class="muted" style="margin-top:0">' + esc(lotSize(l)) + ' in the ' + esc(l.freezer) + ' freezer' +
+      (l.dateIn ? ' &middot; frozen ' + esc(fmtWhen(l)) + ' (' + esc(ageText(l.dateIn)) + ')' : ' &middot; date not recorded') +
+      (l.note ? ' &middot; ' + esc(l.note) : '') + '</p>' +
     '<div class="stack" style="margin-top:18px">' +
       '<button class="btn btn-warm btn-hero btn-block" data-act="do-take" data-id="' + esc(l.id) + '">' +
         'Take all ' + esc(lotSize(l)) + ' out</button>' +
@@ -1114,7 +1181,8 @@ function modalEdit(m) {
 
       '<div><span class="label">Date it went in</span>' +
         '<div class="row">' +
-          '<div class="spacer" style="font-size:1.05rem;font-weight:700">' + esc(fmtDate(m.dateIn)) + '</div>' +
+          '<div class="spacer" style="font-size:1.05rem;font-weight:700">' +
+            esc(fmtWhen({ dateIn: m.dateIn, monthOnly: m.monthOnly })) + '</div>' +
           '<button class="btn" data-act="open-date" data-target="edit">Change date</button>' +
         '</div>' +
       '</div>' +
@@ -1381,16 +1449,25 @@ var ACTIONS = {
   'open-date': function (d) {
     var target = d.target === 'edit' ? 'edit' : 'draft';
     var current = target === 'edit' ? S.modal.dateIn : (S.draft.dateIn || S.today);
-    setState({ modal: { kind: 'date', target: target, value: current, back: target === 'edit' ? S.modal : null } });
+    var monthOnly = target === 'edit' ? !!S.modal.monthOnly : !!S.draft.monthOnly;
+    setState({
+      modal: {
+        kind: 'date', target: target, value: current, monthOnly: monthOnly,
+        back: target === 'edit' ? S.modal : null,
+      },
+    });
   },
-  'date-input': function (d, el) { S.modal.value = el.value; render(); },
+  'date-input': function (d, el) {
+    setState({ modal: Object.assign({}, S.modal, { value: el.value, monthOnly: false }) });
+  },
   'set-date': function (d) {
     if (!d.date) return;
+    var monthOnly = d.monthOnly === '1';
     if (S.modal.target === 'edit') {
-      setState({ modal: Object.assign({}, S.modal.back, { dateIn: d.date }) });
+      setState({ modal: Object.assign({}, S.modal.back, { dateIn: d.date, monthOnly: monthOnly }) });
       return;
     }
-    setState({ modal: null, draft: Object.assign({}, S.draft, { dateIn: d.date }) });
+    setState({ modal: null, draft: Object.assign({}, S.draft, { dateIn: d.date, monthOnly: monthOnly }) });
   },
 
   'show-count': function () {
@@ -1475,7 +1552,7 @@ var ACTIONS = {
     var l = lotById(d.id);
     setState({
       modal: {
-        kind: 'edit', id: l.id, freezer: l.freezer, dateIn: l.dateIn,
+        kind: 'edit', id: l.id, freezer: l.freezer, dateIn: l.dateIn, monthOnly: !!l.monthOnly,
         weightG: l.weightG, count: l.count, unit: l.unit || 'pieces', note: l.note,
       },
     });
@@ -1563,7 +1640,7 @@ function doAdd() {
   var payload = {
     item: d.item, category: d.category, freezer: d.freezer,
     weightG: d.weightG, count: d.showCount ? d.count : 0, unit: d.unit,
-    qty: d.qty, dateIn: d.dateIn || S.today, note: d.note,
+    qty: d.qty, dateIn: d.dateIn || S.today, monthOnly: !!d.monthOnly, note: d.note,
   };
   var label = d.qty + ' × ' + draftEach(d) + ' ' + d.item;
   var sub = 'into the ' + d.freezer + ' freezer · ' + fmtDate(payload.dateIn);
@@ -1582,7 +1659,9 @@ function doAdd() {
     S.recentAdds = S.recentAdds.slice(0, 8);
     S.busy = false;
     // Keep the freezer and date so a run of bagging-up stays quick.
-    S.draft = Object.assign({}, BLANK_DRAFT, { freezer: d.freezer, dateIn: d.dateIn });
+    S.draft = Object.assign({}, BLANK_DRAFT, {
+    freezer: d.freezer, dateIn: d.dateIn, monthOnly: d.monthOnly,
+  });
     S.query = '';
     toast(label + ' put in the ' + d.freezer + ' freezer', res.undo);
   }).catch(function (e) {
@@ -1643,7 +1722,7 @@ function doPart(id, value) {
 function doEdit() {
   var m = S.modal;
   var patch = {
-    freezer: m.freezer, dateIn: m.dateIn, weightG: m.weightG,
+    freezer: m.freezer, dateIn: m.dateIn, monthOnly: !!m.monthOnly, weightG: m.weightG,
     count: m.count, unit: m.count > 0 ? m.unit : '', note: m.note,
   };
   setState({ busy: true, modal: null });
@@ -1716,6 +1795,7 @@ function load(showToast) {
     S.items = st.items;
     S.categories = st.categories;
     S.inventory = st.inventory;
+    S.problems = st.problems || [];
     S.sheetUrl = st.sheetUrl || '';
     S.today = st.today || todayISO();
     if (!S.draft.dateIn) S.draft.dateIn = S.today;

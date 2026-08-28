@@ -1,8 +1,8 @@
 /// Built by build.mjs from apps-script/host.js + src/backend.js — do not edit here.
 
 /** Stamped by build.mjs. Shown in the setup dialog and compared against latest.json. */
-const BUILD = '2026-08-28T21:58:02Z';
-const BUILD_COMMIT = 'd4f3b3f';
+const BUILD = '2026-08-28T22:04:54Z';
+const BUILD_COMMIT = '9575db0';
 const RELEASE_BASE = 'https://raw.githubusercontent.com/ed-ij/pantry-cache/main/';
 
 /**
@@ -34,6 +34,7 @@ function spreadsheet_() {
 
 /** Per-execution cache of sheet contents; cleared whenever we write. */
 let CACHE_ = {};
+let HEADERS_ = {};
 
 const DB = {
   /**
@@ -57,15 +58,26 @@ const DB = {
         sh = ss.insertSheet(name);
         created = true;
       }
-      const width = headers.length;
-      const current = sh.getLastRow() > 0 ? sh.getRange(1, 1, 1, width).getValues()[0] : [];
-      if (current.join(' ') !== headers.join(' ')) {
-        sh.getRange(1, 1, 1, width).setValues([headers]);
+      // Row 1 is the contract between the sheet and this code. It used to be
+      // overwritten whenever it did not match — which is the worst possible
+      // response to an inserted column: the values stay shifted and the
+      // evidence that anything is wrong is erased. Now missing headers are
+      // appended (constraint 9), and anything else is refused out loud.
+      const existing = headerRow_(sh);
+      const missing = headers.filter(function (h) { return existing.indexOf(h) < 0; });
+      if (!existing.length) {
+        sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+        HEADERS_ = {};
+      } else if (missing.length) {
+        sh.getRange(1, existing.length + 1, 1, missing.length).setValues([missing]);
+        HEADERS_ = {};
       }
+      const width = Math.max(headerRow_(sh).length, headers.length);
       sh.getRange(1, 1, 1, width).setFontWeight('bold').setBackground('#e8eef5');
       sh.setFrozenRows(1);
 
-      headers.forEach(function (h, i) {
+      const laidOut = headerRow_(sh);
+      laidOut.forEach(function (h, i) {
         const rows = Math.max(sh.getMaxRows() - 1, 1);
         if (DATE_COLUMNS.indexOf(h) >= 0) {
           sh.getRange(2, i + 1, rows, 1).setNumberFormat('dd mmm yyyy');
@@ -103,8 +115,13 @@ const DB = {
     if (CACHE_[name]) return CACHE_[name];
     const sh = sheet_(name);
     const last = sh.getLastRow();
-    const headers = TABLES[name];
-    if (last < 2) {
+    // Read what row 1 actually says rather than assuming TABLES' order. Insert
+    // a column and every read used to shift by one — notes became counts,
+    // weights became dates — with nothing to notice it. Reordering and inserted
+    // columns now cost nothing, which is what makes constraint 1 safe rather
+    // than merely stated.
+    const headers = headerRow_(sh);
+    if (last < 2 || !headers.length) {
       CACHE_[name] = [];
       return CACHE_[name];
     }
@@ -114,6 +131,7 @@ const DB = {
       .map(function (row) {
         const obj = {};
         headers.forEach(function (h, i) {
+          if (!h) return;
           let v = row[i];
           if (v instanceof Date) v = Utilities.formatDate(v, tz, 'yyyy-MM-dd');
           obj[h] = v;
@@ -122,7 +140,7 @@ const DB = {
       })
       .filter(function (obj) {
         // Skip rows the user has blanked out in the sheet.
-        return headers.some(function (h) { return txt(obj[h]) !== ''; });
+        return headers.some(function (h) { return h && txt(obj[h]) !== ''; });
       });
     return CACHE_[name];
   },
@@ -130,17 +148,18 @@ const DB = {
   append: function (name, objs) {
     if (!objs || !objs.length) return;
     const sh = sheet_(name);
-    const headers = TABLES[name];
+    const headers = headerRow_(sh);
     const rows = objs.map(function (o) {
-      return headers.map(function (h) { return toCell_(h, o[h]); });
+      return headers.map(function (h) { return h in o ? toCell_(h, o[h]) : ''; });
     });
     sh.getRange(sh.getLastRow() + 1, 1, rows.length, headers.length).setValues(rows);
     CACHE_ = {};
+    HEADERS_ = {};
   },
 
   updateById: function (name, id, patch) {
     const sh = sheet_(name);
-    const headers = TABLES[name];
+    const headers = headerRow_(sh);
     const rowIndex = findRow_(sh, id);
     if (rowIndex < 0) return;
     Object.keys(patch).forEach(function (h) {
@@ -149,6 +168,7 @@ const DB = {
       sh.getRange(rowIndex, col + 1).setValue(toCell_(h, patch[h]));
     });
     CACHE_ = {};
+    HEADERS_ = {};
   },
 
   /**
@@ -158,7 +178,7 @@ const DB = {
    */
   updateColumn: function (name, header, fn) {
     const sh = sheet_(name);
-    const col = TABLES[name].indexOf(header);
+    const col = headerRow_(sh).indexOf(header);
     const last = sh.getLastRow();
     if (col < 0 || last < 2) return 0;
 
@@ -179,6 +199,7 @@ const DB = {
     if (changed) {
       range.setValues(values);
       CACHE_ = {};
+      HEADERS_ = {};
     }
     return changed;
   },
@@ -199,6 +220,7 @@ const DB = {
     // Delete bottom-up so earlier row numbers stay valid.
     for (let i = targets.length - 1; i >= 0; i--) sh.deleteRow(targets[i]);
     CACHE_ = {};
+    HEADERS_ = {};
   },
 
   /**
@@ -234,10 +256,24 @@ const DB = {
       return fn();
     } finally {
       CACHE_ = {};
+      HEADERS_ = {};
       lock.releaseLock();
     }
   },
 };
+
+/**
+ * Row 1, as it actually is. Cached per execution alongside the values, since
+ * every read and write now consults it.
+ */
+function headerRow_(sh) {
+  const name = sh.getName();
+  if (HEADERS_[name]) return HEADERS_[name];
+  if (sh.getLastRow() < 1 || sh.getLastColumn() < 1) return [];
+  HEADERS_[name] = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]
+    .map(function (h) { return txt(h); });
+  return HEADERS_[name];
+}
 
 function sheet_(name) {
   const ss = spreadsheet_();
@@ -429,8 +465,8 @@ function showUpdate() {
 const TABLES = {
   Freezers: ['Name', 'Where', 'Colour'],
   Items: ['Item', 'Category', 'Typical weight (g)', 'Typical count', 'Unit'],
-  Inventory: ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit'],
-  History: ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Date Out', 'Note', 'Count', 'Unit'],
+  Inventory: ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit', 'Month only'],
+  History: ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Date Out', 'Note', 'Count', 'Unit', 'Month only'],
 };
 
 const DATE_COLUMNS = ['Date In', 'Date Out'];
@@ -468,32 +504,100 @@ function newId(prefix) {
   return prefix + stamp + ('00' + seq).slice(-2) + ('000' + salt).slice(-3);
 }
 
-function num(v) {
-  if (v === null || v === undefined || v === '') return 0;
-  const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
-  return isNaN(n) ? 0 : n;
-}
-
 function txt(v) {
   return v === null || v === undefined ? '' : String(v).trim();
 }
 
-/** Accepts 'YYYY-MM-DD', a Date, or common typed-in formats. Returns 'YYYY-MM-DD' or ''. */
-function normDate(v) {
-  if (!v) return '';
-  if (v instanceof Date && !isNaN(v.getTime())) {
-    return v.getFullYear() + '-' + pad2(v.getMonth() + 1) + '-' + pad2(v.getDate());
+/**
+ * Constraint 1 invites her to open the spreadsheet and correct it, so these two
+ * functions are the ones that read whatever she writes. They used to have no
+ * failure mode: num() stripped every character that was not a digit, a dot or a
+ * minus and took what was left, so "1.5kg" in a column headed Weight (g)
+ * became 2 grams and "2 x 500" became 2500 — five times the truth, silently.
+ *
+ * Now they either read a value or say they could not, and apiGetState passes
+ * what it could not read back to the screen. Constraint 3 says errors are
+ * written in English; a quietly wrong number is worse than an error.
+ */
+const WEIGHT_UNITS = {
+  g: 1, gs: 1, gram: 1, grams: 1, gramme: 1, grammes: 1,
+  kg: 1000, kgs: 1000, kilo: 1000, kilos: 1000, kilogram: 1000, kilograms: 1000,
+  oz: 28.349523125, ozs: 28.349523125, ounce: 28.349523125, ounces: 28.349523125,
+  lb: 453.59237, lbs: 453.59237, pound: 453.59237, pounds: 453.59237,
+};
+
+/** { value, ok, suffix } — `ok` false means the cell held something unreadable. */
+function parseNum(v) {
+  if (v === null || v === undefined || v === '') return { value: 0, ok: true };
+  if (typeof v === 'number') {
+    return isFinite(v) ? { value: v, ok: true } : { value: 0, ok: false, raw: String(v) };
   }
-  const s = String(v).trim();
-  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (m) return m[1] + '-' + pad2(m[2]) + '-' + pad2(m[3]);
-  // dd/mm/yyyy — the sheet's locale is UK, so day comes first.
-  m = s.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})$/);
-  if (m) return m[3] + '-' + pad2(m[2]) + '-' + pad2(m[1]);
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
-  return '';
+  const raw = txt(v);
+  const s = raw.toLowerCase().replace(/,/g, '').replace(/\s+/g, '');
+  if (!s) return { value: 0, ok: true };
+  const m = s.match(/^(-?\d+(?:\.\d+)?)([a-z]*)$/);
+  if (!m) return { value: 0, ok: false, raw: raw };
+  const n = Number(m[1]);
+  if (!isFinite(n)) return { value: 0, ok: false, raw: raw };
+  return { value: n, ok: true, suffix: m[2] };
 }
+
+/** The same, in grams, honouring kg / oz / lb rather than discarding them. */
+function parseGrams(v) {
+  const p = parseNum(v);
+  if (!p.ok || !p.suffix) return p;
+  const factor = WEIGHT_UNITS[p.suffix];
+  if (!factor) return { value: 0, ok: false, raw: txt(v) };
+  return { value: p.value * factor, ok: true };
+}
+
+function num(v) { return parseNum(v).value; }
+function grams(v) { return parseGrams(v).value; }
+
+function validYMD_(y, mo, d, raw) {
+  if (y < 1900 || y > 2200 || mo < 1 || mo > 12 || d < 1 || d > 31) {
+    return { value: '', ok: false, raw: raw };
+  }
+  // Catches 31 April and 29 February in a common year, which JavaScript would
+  // otherwise roll silently forward into the next month.
+  const probe = new Date(y, mo - 1, d);
+  if (probe.getFullYear() !== y || probe.getMonth() !== mo - 1 || probe.getDate() !== d) {
+    return { value: '', ok: false, raw: raw };
+  }
+  return { value: y + '-' + pad2(mo) + '-' + pad2(d), ok: true };
+}
+
+/**
+ * Accepts 'YYYY-MM-DD', a Date, or dd/mm/yy(yy). The UK order is deliberate —
+ * it is the sheet's locale — and it now covers two-digit years, which used to
+ * fall through to `new Date(s)`, the one US-first path in the file. "3/9/25"
+ * came back as 9 March. That fallback is gone rather than fixed: there is no
+ * format it is the right answer for here.
+ */
+function parseDate(v) {
+  if (v === null || v === undefined || v === '') return { value: '', ok: true };
+  if (v instanceof Date) {
+    return isNaN(v.getTime())
+      ? { value: '', ok: false, raw: String(v) }
+      : { value: v.getFullYear() + '-' + pad2(v.getMonth() + 1) + '-' + pad2(v.getDate()), ok: true };
+  }
+  const s = txt(v);
+  if (!s) return { value: '', ok: true };
+
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/);
+  if (m) return validYMD_(Number(m[1]), Number(m[2]), Number(m[3]), s);
+
+  m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2}|\d{4})$/);
+  if (m) {
+    let y = Number(m[3]);
+    if (m[3].length === 2) y += y < 70 ? 2000 : 1900;
+    return validYMD_(y, Number(m[2]), Number(m[1]), s);
+  }
+
+  return { value: '', ok: false, raw: s };
+}
+
+function normDate(v) { return parseDate(v).value; }
 
 function pad2(n) {
   return ('0' + n).slice(-2);
@@ -511,17 +615,30 @@ function keyOf(v) {
 }
 
 function toLot(r) {
+  const w = parseGrams(r['Weight (g)']);
+  const c = parseNum(r.Count);
+  const din = parseDate(r['Date In']);
   return {
     id: txt(r.ID),
     item: txt(r.Item),
     category: txt(r.Category) || 'Other',
     freezer: txt(r.Freezer),
-    weightG: Math.round(num(r['Weight (g)'])),
-    count: Math.round(num(r.Count)),
+    weightG: Math.round(w.value),
+    count: Math.round(c.value),
     unit: txt(r.Unit),
-    dateIn: normDate(r['Date In']),
+    dateIn: din.value,
     dateOut: normDate(r['Date Out']),
     note: txt(r.Note),
+    // Constraint 5 says the month is what matters and the day is a bonus.
+    // Without somewhere to record that, backdating to a month had to invent
+    // the 1st and every screen then showed it as a day she had chosen.
+    monthOnly: keyOf(r['Month only']) === 'yes',
+    // What could not be read, so the screen can say so instead of guessing.
+    unreadable: [
+      w.ok ? null : { field: 'Weight (g)', raw: w.raw },
+      c.ok ? null : { field: 'Count', raw: c.raw },
+      din.ok ? null : { field: 'Date In', raw: din.raw },
+    ].filter(Boolean),
   };
 }
 
@@ -536,7 +653,15 @@ function apiGetState() {
       return {
         name: txt(r.Name),
         where: txt(r.Where),
-        colour: txt(r.Colour) || FREEZER_COLOURS[i % FREEZER_COLOURS.length],
+        // The colour is handed to CSS as a custom property. `var(--fz, fallback)`
+        // only uses its fallback when the property is *unset*, so a cell holding
+        // "2f7fd0" — the hash left off, which the README invites by asking for
+        // hex codes — set it to something invalid and every dot for that freezer
+        // disappeared rather than going grey. This is also the one place sheet
+        // data reaches a style context, so it is worth being strict.
+        colour: /^#[0-9a-f]{3,8}$/i.test(txt(r.Colour))
+          ? txt(r.Colour)
+          : FREEZER_COLOURS[i % FREEZER_COLOURS.length],
       };
     });
 
@@ -579,6 +704,18 @@ function apiGetState() {
   DEFAULT_CATEGORIES.forEach(function (c) { categories[keyOf(c)] = c; });
   itemList.forEach(function (it) { categories[keyOf(it.category)] = it.category; });
 
+  // Anything the parsers refused, so the screen can name it rather than
+  // reporting a confident 0 g. Capped, because the point is to prompt a look at
+  // the spreadsheet, not to reproduce it.
+  const problems = [];
+  inventory.forEach(function (lot) {
+    lot.unreadable.forEach(function (u) {
+      if (problems.length < 20) {
+        problems.push({ id: lot.id, item: lot.item, field: u.field, raw: u.raw });
+      }
+    });
+  });
+
   // History stays in the sheet for later analysis; the app only needs what is
   // currently in the freezers, so it is not sent over the wire.
   return {
@@ -586,6 +723,7 @@ function apiGetState() {
     items: itemList,
     categories: Object.keys(categories).map(function (k) { return categories[k]; }),
     inventory: inventory,
+    problems: problems,
     today: DB.today(),
     sheetUrl: DB.sheetUrl ? DB.sheetUrl() : '',
   };
@@ -703,6 +841,7 @@ function apiAdd(p) {
 
     const qty = Math.max(1, Math.min(99, Math.round(num(p.qty)) || 1));
     const dateIn = normDate(p.dateIn) || DB.today();
+    const monthOnly = p.monthOnly ? 'yes' : '';
     const note = txt(p.note);
 
     const itemCreated = ensureItemType(item, category, weightG, count, unit);
@@ -719,6 +858,7 @@ function apiAdd(p) {
         Note: note,
         Count: count || '',
         Unit: unit,
+        'Month only': monthOnly,
       });
     }
     DB.append('Inventory', rows);
@@ -772,6 +912,7 @@ function removeWhole_(ids, dateOutRaw) {
       Note: txt(r.Note),
       Count: Math.round(num(r.Count)) || '',
       Unit: txt(r.Unit),
+      'Month only': txt(r['Month only']),
     });
   });
   if (!foundIds.length) throw new Error('Those bags are no longer in the freezer.');
@@ -842,6 +983,7 @@ function apiRemovePart(p) {
       Note: txt(lot.Note),
       Count: takeC || '',
       Unit: txt(lot.Unit),
+      'Month only': txt(lot['Month only']),
     }]);
     DB.updateById('Inventory', id, {
       'Weight (g)': haveW - takeW || '',
@@ -876,6 +1018,7 @@ function apiEditLot(p) {
     if ('count' in src) patch.Count = Math.max(0, Math.round(num(src.count))) || '';
     if ('unit' in src) patch.Unit = txt(src.unit);
     if ('dateIn' in src) patch['Date In'] = normDate(src.dateIn) || normDate(lot['Date In']);
+    if ('monthOnly' in src) patch['Month only'] = src.monthOnly ? 'yes' : '';
     if ('note' in src) patch.Note = txt(src.note);
 
     const after = function (key) { return key in patch ? patch[key] : lot[key]; };
@@ -939,6 +1082,7 @@ function apiSplitLot(p) {
         Note: txt(lot.Note),
         Count: (counts[i] || 0) || '',
         Unit: txt(lot.Unit),
+        'Month only': txt(lot['Month only']),
       });
     }
 
@@ -1135,6 +1279,7 @@ function apiUndo(handle) {
           Note: txt(r.Note),
           Count: Math.round(num(r.Count)) || '',
           Unit: txt(r.Unit),
+          'Month only': txt(r['Month only']),
         };
       }));
       DB.deleteByIds('History', Object.keys(ids));

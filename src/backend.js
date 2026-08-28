@@ -22,8 +22,8 @@
 const TABLES = {
   Freezers: ['Name', 'Where', 'Colour'],
   Items: ['Item', 'Category', 'Typical weight (g)', 'Typical count', 'Unit'],
-  Inventory: ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit'],
-  History: ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Date Out', 'Note', 'Count', 'Unit'],
+  Inventory: ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit', 'Month only'],
+  History: ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Date Out', 'Note', 'Count', 'Unit', 'Month only'],
 };
 
 const DATE_COLUMNS = ['Date In', 'Date Out'];
@@ -61,32 +61,100 @@ function newId(prefix) {
   return prefix + stamp + ('00' + seq).slice(-2) + ('000' + salt).slice(-3);
 }
 
-function num(v) {
-  if (v === null || v === undefined || v === '') return 0;
-  const n = Number(String(v).replace(/[^0-9.\-]/g, ''));
-  return isNaN(n) ? 0 : n;
-}
-
 function txt(v) {
   return v === null || v === undefined ? '' : String(v).trim();
 }
 
-/** Accepts 'YYYY-MM-DD', a Date, or common typed-in formats. Returns 'YYYY-MM-DD' or ''. */
-function normDate(v) {
-  if (!v) return '';
-  if (v instanceof Date && !isNaN(v.getTime())) {
-    return v.getFullYear() + '-' + pad2(v.getMonth() + 1) + '-' + pad2(v.getDate());
+/**
+ * Constraint 1 invites her to open the spreadsheet and correct it, so these two
+ * functions are the ones that read whatever she writes. They used to have no
+ * failure mode: num() stripped every character that was not a digit, a dot or a
+ * minus and took what was left, so "1.5kg" in a column headed Weight (g)
+ * became 2 grams and "2 x 500" became 2500 — five times the truth, silently.
+ *
+ * Now they either read a value or say they could not, and apiGetState passes
+ * what it could not read back to the screen. Constraint 3 says errors are
+ * written in English; a quietly wrong number is worse than an error.
+ */
+const WEIGHT_UNITS = {
+  g: 1, gs: 1, gram: 1, grams: 1, gramme: 1, grammes: 1,
+  kg: 1000, kgs: 1000, kilo: 1000, kilos: 1000, kilogram: 1000, kilograms: 1000,
+  oz: 28.349523125, ozs: 28.349523125, ounce: 28.349523125, ounces: 28.349523125,
+  lb: 453.59237, lbs: 453.59237, pound: 453.59237, pounds: 453.59237,
+};
+
+/** { value, ok, suffix } — `ok` false means the cell held something unreadable. */
+function parseNum(v) {
+  if (v === null || v === undefined || v === '') return { value: 0, ok: true };
+  if (typeof v === 'number') {
+    return isFinite(v) ? { value: v, ok: true } : { value: 0, ok: false, raw: String(v) };
   }
-  const s = String(v).trim();
-  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (m) return m[1] + '-' + pad2(m[2]) + '-' + pad2(m[3]);
-  // dd/mm/yyyy — the sheet's locale is UK, so day comes first.
-  m = s.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})$/);
-  if (m) return m[3] + '-' + pad2(m[2]) + '-' + pad2(m[1]);
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
-  return '';
+  const raw = txt(v);
+  const s = raw.toLowerCase().replace(/,/g, '').replace(/\s+/g, '');
+  if (!s) return { value: 0, ok: true };
+  const m = s.match(/^(-?\d+(?:\.\d+)?)([a-z]*)$/);
+  if (!m) return { value: 0, ok: false, raw: raw };
+  const n = Number(m[1]);
+  if (!isFinite(n)) return { value: 0, ok: false, raw: raw };
+  return { value: n, ok: true, suffix: m[2] };
 }
+
+/** The same, in grams, honouring kg / oz / lb rather than discarding them. */
+function parseGrams(v) {
+  const p = parseNum(v);
+  if (!p.ok || !p.suffix) return p;
+  const factor = WEIGHT_UNITS[p.suffix];
+  if (!factor) return { value: 0, ok: false, raw: txt(v) };
+  return { value: p.value * factor, ok: true };
+}
+
+function num(v) { return parseNum(v).value; }
+function grams(v) { return parseGrams(v).value; }
+
+function validYMD_(y, mo, d, raw) {
+  if (y < 1900 || y > 2200 || mo < 1 || mo > 12 || d < 1 || d > 31) {
+    return { value: '', ok: false, raw: raw };
+  }
+  // Catches 31 April and 29 February in a common year, which JavaScript would
+  // otherwise roll silently forward into the next month.
+  const probe = new Date(y, mo - 1, d);
+  if (probe.getFullYear() !== y || probe.getMonth() !== mo - 1 || probe.getDate() !== d) {
+    return { value: '', ok: false, raw: raw };
+  }
+  return { value: y + '-' + pad2(mo) + '-' + pad2(d), ok: true };
+}
+
+/**
+ * Accepts 'YYYY-MM-DD', a Date, or dd/mm/yy(yy). The UK order is deliberate —
+ * it is the sheet's locale — and it now covers two-digit years, which used to
+ * fall through to `new Date(s)`, the one US-first path in the file. "3/9/25"
+ * came back as 9 March. That fallback is gone rather than fixed: there is no
+ * format it is the right answer for here.
+ */
+function parseDate(v) {
+  if (v === null || v === undefined || v === '') return { value: '', ok: true };
+  if (v instanceof Date) {
+    return isNaN(v.getTime())
+      ? { value: '', ok: false, raw: String(v) }
+      : { value: v.getFullYear() + '-' + pad2(v.getMonth() + 1) + '-' + pad2(v.getDate()), ok: true };
+  }
+  const s = txt(v);
+  if (!s) return { value: '', ok: true };
+
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/);
+  if (m) return validYMD_(Number(m[1]), Number(m[2]), Number(m[3]), s);
+
+  m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2}|\d{4})$/);
+  if (m) {
+    let y = Number(m[3]);
+    if (m[3].length === 2) y += y < 70 ? 2000 : 1900;
+    return validYMD_(y, Number(m[2]), Number(m[1]), s);
+  }
+
+  return { value: '', ok: false, raw: s };
+}
+
+function normDate(v) { return parseDate(v).value; }
 
 function pad2(n) {
   return ('0' + n).slice(-2);
@@ -104,17 +172,30 @@ function keyOf(v) {
 }
 
 function toLot(r) {
+  const w = parseGrams(r['Weight (g)']);
+  const c = parseNum(r.Count);
+  const din = parseDate(r['Date In']);
   return {
     id: txt(r.ID),
     item: txt(r.Item),
     category: txt(r.Category) || 'Other',
     freezer: txt(r.Freezer),
-    weightG: Math.round(num(r['Weight (g)'])),
-    count: Math.round(num(r.Count)),
+    weightG: Math.round(w.value),
+    count: Math.round(c.value),
     unit: txt(r.Unit),
-    dateIn: normDate(r['Date In']),
+    dateIn: din.value,
     dateOut: normDate(r['Date Out']),
     note: txt(r.Note),
+    // Constraint 5 says the month is what matters and the day is a bonus.
+    // Without somewhere to record that, backdating to a month had to invent
+    // the 1st and every screen then showed it as a day she had chosen.
+    monthOnly: keyOf(r['Month only']) === 'yes',
+    // What could not be read, so the screen can say so instead of guessing.
+    unreadable: [
+      w.ok ? null : { field: 'Weight (g)', raw: w.raw },
+      c.ok ? null : { field: 'Count', raw: c.raw },
+      din.ok ? null : { field: 'Date In', raw: din.raw },
+    ].filter(Boolean),
   };
 }
 
@@ -129,7 +210,15 @@ function apiGetState() {
       return {
         name: txt(r.Name),
         where: txt(r.Where),
-        colour: txt(r.Colour) || FREEZER_COLOURS[i % FREEZER_COLOURS.length],
+        // The colour is handed to CSS as a custom property. `var(--fz, fallback)`
+        // only uses its fallback when the property is *unset*, so a cell holding
+        // "2f7fd0" — the hash left off, which the README invites by asking for
+        // hex codes — set it to something invalid and every dot for that freezer
+        // disappeared rather than going grey. This is also the one place sheet
+        // data reaches a style context, so it is worth being strict.
+        colour: /^#[0-9a-f]{3,8}$/i.test(txt(r.Colour))
+          ? txt(r.Colour)
+          : FREEZER_COLOURS[i % FREEZER_COLOURS.length],
       };
     });
 
@@ -172,6 +261,18 @@ function apiGetState() {
   DEFAULT_CATEGORIES.forEach(function (c) { categories[keyOf(c)] = c; });
   itemList.forEach(function (it) { categories[keyOf(it.category)] = it.category; });
 
+  // Anything the parsers refused, so the screen can name it rather than
+  // reporting a confident 0 g. Capped, because the point is to prompt a look at
+  // the spreadsheet, not to reproduce it.
+  const problems = [];
+  inventory.forEach(function (lot) {
+    lot.unreadable.forEach(function (u) {
+      if (problems.length < 20) {
+        problems.push({ id: lot.id, item: lot.item, field: u.field, raw: u.raw });
+      }
+    });
+  });
+
   // History stays in the sheet for later analysis; the app only needs what is
   // currently in the freezers, so it is not sent over the wire.
   return {
@@ -179,6 +280,7 @@ function apiGetState() {
     items: itemList,
     categories: Object.keys(categories).map(function (k) { return categories[k]; }),
     inventory: inventory,
+    problems: problems,
     today: DB.today(),
     sheetUrl: DB.sheetUrl ? DB.sheetUrl() : '',
   };
@@ -296,6 +398,7 @@ function apiAdd(p) {
 
     const qty = Math.max(1, Math.min(99, Math.round(num(p.qty)) || 1));
     const dateIn = normDate(p.dateIn) || DB.today();
+    const monthOnly = p.monthOnly ? 'yes' : '';
     const note = txt(p.note);
 
     const itemCreated = ensureItemType(item, category, weightG, count, unit);
@@ -312,6 +415,7 @@ function apiAdd(p) {
         Note: note,
         Count: count || '',
         Unit: unit,
+        'Month only': monthOnly,
       });
     }
     DB.append('Inventory', rows);
@@ -365,6 +469,7 @@ function removeWhole_(ids, dateOutRaw) {
       Note: txt(r.Note),
       Count: Math.round(num(r.Count)) || '',
       Unit: txt(r.Unit),
+      'Month only': txt(r['Month only']),
     });
   });
   if (!foundIds.length) throw new Error('Those bags are no longer in the freezer.');
@@ -435,6 +540,7 @@ function apiRemovePart(p) {
       Note: txt(lot.Note),
       Count: takeC || '',
       Unit: txt(lot.Unit),
+      'Month only': txt(lot['Month only']),
     }]);
     DB.updateById('Inventory', id, {
       'Weight (g)': haveW - takeW || '',
@@ -469,6 +575,7 @@ function apiEditLot(p) {
     if ('count' in src) patch.Count = Math.max(0, Math.round(num(src.count))) || '';
     if ('unit' in src) patch.Unit = txt(src.unit);
     if ('dateIn' in src) patch['Date In'] = normDate(src.dateIn) || normDate(lot['Date In']);
+    if ('monthOnly' in src) patch['Month only'] = src.monthOnly ? 'yes' : '';
     if ('note' in src) patch.Note = txt(src.note);
 
     const after = function (key) { return key in patch ? patch[key] : lot[key]; };
@@ -532,6 +639,7 @@ function apiSplitLot(p) {
         Note: txt(lot.Note),
         Count: (counts[i] || 0) || '',
         Unit: txt(lot.Unit),
+        'Month only': txt(lot['Month only']),
       });
     }
 
@@ -728,6 +836,7 @@ function apiUndo(handle) {
           Note: txt(r.Note),
           Count: Math.round(num(r.Count)) || '',
           Unit: txt(r.Unit),
+          'Month only': txt(r['Month only']),
         };
       }));
       DB.deleteByIds('History', Object.keys(ids));
