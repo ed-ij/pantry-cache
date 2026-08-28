@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "node dev/server.mjs",
     "build": "node build.mjs",
-    "test": "node dev/smoke.mjs && node dev/sheet-smoke.mjs",
+    "test": "node dev/smoke.mjs && node dev/sheet-smoke.mjs && node tools/check-contrast.mjs",
     "export": "node tools/export-csv.mjs",
     "import": "node tools/import-sheet.mjs",
     "release": "node tools/release.mjs"

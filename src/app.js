@@ -333,6 +333,12 @@ function dot(colour) {
   return '<span class="dot" style="--fz:' + esc(colour) + '"></span>';
 }
 
+/** The freezer's name, tinted with its own colour rather than a neutral pill. */
+function freezerBadge(name) {
+  return '<span class="badge badge-freezer" style="--fz:' + esc(freezerColour(name)) + '">' +
+    dot(freezerColour(name)) + esc(name) + '</span>';
+}
+
 function freezerColour(name) {
   var f = S.freezers.filter(function (x) { return x.name === name; })[0];
   return f ? f.colour : 'var(--ink-3)';
@@ -477,10 +483,10 @@ function renderTopRight() {
   }
   if (S.offline) {
     return '<span class="badge badge-warm">Offline &mdash; cannot save</span>' +
-      '<button class="btn btn-ghost" style="min-height:2.6rem;padding:0 12px" data-act="refresh" title="Try again">&#8635;</button>';
+      '<button class="btn btn-ghost btn-compact" data-act="refresh" title="Try again">&#8635;</button>';
   }
   return '<span class="badge">' + esc(fmtW(total)) + ' stored</span>' +
-    '<button class="btn btn-ghost" style="min-height:2.6rem;padding:0 12px" data-act="refresh" title="Reload from the spreadsheet">&#8635;</button>';
+    '<button class="btn btn-ghost btn-compact" data-act="refresh" title="Reload from the spreadsheet">&#8635;</button>';
 }
 
 var TABS = [
@@ -571,8 +577,8 @@ function itemTile(it) {
   return '<button class="tile' + (inStock.length ? '' : ' is-empty') + '" data-act="pick-item" ' +
     'data-name="' + esc(it.name) + '" data-category="' + esc(it.category) + '" data-typical="' + (it.typicalG || 0) + '" ' +
     'data-count="' + (it.typicalCount || 0) + '" data-unit="' + esc(it.unit || '') + '">' +
-    '<span class="tile-name">' + esc(it.name) + '</span>' +
-    '<span class="tile-meta">' + meta + '</span></button>';
+    '<div class="tile-name">' + esc(it.name) + '</span>' +
+    '<div class="tile-meta">' + meta + '</span></button>';
 }
 
 /**
@@ -629,8 +635,8 @@ function renderAddSearch(q) {
 
   var newTile = !exact
     ? '<button class="tile tile-new" data-act="new-item" data-name="' + esc(q) + '">' +
-      '<span class="tile-name">&#43; ' + esc(tidyName(q)) + '</span>' +
-      '<span class="tile-meta">something new</span></button>'
+      '<div class="tile-name">&#43; ' + esc(tidyName(q)) + '</span>' +
+      '<div class="tile-meta">something new</span></button>'
     : '';
 
   if (!matches.length && !newTile) return '';
@@ -933,11 +939,11 @@ function renderByAge(inv) {
         '</div>';
     }
     html += '<button class="row-btn" data-act="ask-take" data-id="' + esc(l.id) + '">' +
-      '<div class="row-main"><div class="row-name">' + esc(l.item) + '</div>' +
-      '<div class="row-meta">' +
-      (oneFreezer ? '' : '<span class="badge badge-freezer">' + dot(freezerColour(l.freezer)) + '' + esc(l.freezer) + '</span> ') +
-      esc(fmtWhen(l)) + (l.note ? ' &middot; ' + esc(l.note) : '') + '</div></div>' +
-      '<div class="row-right"><div class="row-strong">' + esc(lotSize(l)) + '</div></div>' +
+      '<span class="row-main"><span class="row-name">' + esc(l.item) + '</span>' +
+      '<span class="row-meta">' +
+      (oneFreezer ? '' : freezerBadge(l.freezer) + ' ') +
+      esc(fmtWhen(l)) + (l.note ? ' &middot; ' + esc(l.note) : '') + '</span></span>' +
+      '<span class="row-right"><span class="row-strong">' + esc(lotSize(l)) + '</span></span>' +
       '<span class="row-chevron">&rsaquo;</span></button>';
   });
 
@@ -989,7 +995,7 @@ function itemRow(lots, key, freezerContext) {
     var places = {};
     lots.forEach(function (l) { places[l.freezer] = (places[l.freezer] || 0) + l.weightG; });
     meta += ' &middot; ' + Object.keys(places).map(function (p) {
-      return '<span class="badge badge-freezer">' + dot(freezerColour(p)) + '' + esc(p) + '</span>';
+      return freezerBadge(p);
     }).join(' ');
   }
 
@@ -1000,26 +1006,26 @@ function itemRow(lots, key, freezerContext) {
           '<span class="lot-date">' +
             (l.dateIn ? esc(fmtWhen(l)) + ' &middot; ' + esc(ageText(l.dateIn)) : 'date not recorded') +
           '</span>' +
-          (freezerContext ? '' : '<span class="badge badge-freezer">' + dot(freezerColour(l.freezer)) + '' + esc(l.freezer) + '</span>') +
+          (freezerContext ? '' : freezerBadge(l.freezer)) +
           (l.dateIn && l === oldest && sorted.length > 1 ? '<span class="badge badge-warm">use first</span>' : '') +
           (l.note ? '<span class="lot-date">' + esc(l.note) + '</span>' : '') +
           '<span class="spacer"></span>' +
-          '<button class="btn btn-ghost" style="min-height:2.6rem" data-act="ask-take" data-id="' + esc(l.id) + '">Take out</button>' +
+          '<button class="btn btn-ghost btn-compact" data-act="ask-take" data-id="' + esc(l.id) + '">Take out</button>' +
           '</div>';
       }).join('') +
       '<div class="lots-foot">' +
-        '<button class="btn btn-ghost" style="min-height:2.6rem;padding-left:0" ' +
+        '<button class="btn btn-ghost btn-compact" style="padding-left:0" ' +
         'data-act="open-rename" data-scope="item" data-from="' + esc(lots[0].item) + '">' +
         '&#9998; Rename &ldquo;' + esc(lots[0].item) + '&rdquo;</button>' +
       '</div></div>'
     : '';
 
   return '<button class="row-btn" data-act="toggle-open" data-key="' + esc(key) + '">' +
-    '<div class="row-main"><div class="row-name">' + esc(lots[0].item) + '</div>' +
-    '<div class="row-meta">' + meta +
-      (oldest ? ' &middot; oldest ' + esc(fmtMonth(oldest.dateIn)) : ' &middot; no dates recorded') + '</div></div>' +
-    '<div class="row-right"><div class="row-strong">' + esc(totals[0]) + '</div>' +
-    (totals.length > 1 ? '<div class="row-sub">' + esc(totals.slice(1).join(' \u00b7 ')) + '</div>' : '') + '</div>' +
+    '<span class="row-main"><span class="row-name">' + esc(lots[0].item) + '</span>' +
+    '<span class="row-meta">' + meta +
+      (oldest ? ' &middot; oldest ' + esc(fmtMonth(oldest.dateIn)) : ' &middot; no dates recorded') + '</span></span>' +
+    '<span class="row-right"><span class="row-strong">' + esc(totals[0]) + '</span>' +
+    (totals.length > 1 ? '<span class="row-sub">' + esc(totals.slice(1).join(' \u00b7 ')) + '</span>' : '') + '</span>' +
     '<span class="row-chevron">' + (open ? '&#9662;' : '&rsaquo;') + '</span></button>' + detail;
 }
 
@@ -1045,12 +1051,12 @@ function renderTake() {
     var first = l.dateIn && !oldestSeen[norm(l.item)];
     if (l.dateIn) oldestSeen[norm(l.item)] = 1;
     return '<button class="row-btn" data-act="ask-take" data-id="' + esc(l.id) + '">' +
-      '<div class="row-main"><div class="row-name">' + esc(l.item) +
-        (first ? ' <span class="badge badge-warm">use first</span>' : '') + '</div>' +
-      '<div class="row-meta"><span class="badge badge-freezer">' + dot(freezerColour(l.freezer)) + '' + esc(l.freezer) + '</span> ' +
+      '<span class="row-main"><span class="row-name">' + esc(l.item) +
+        (first ? ' <span class="badge badge-warm">use first</span>' : '') + '</span>' +
+      '<span class="row-meta">' + freezerBadge(l.freezer) + ' ' +
       (l.dateIn ? 'frozen ' + esc(fmtWhen(l)) + ' &middot; ' + esc(ageText(l.dateIn)) : 'date not recorded') +
-      (l.note ? ' &middot; ' + esc(l.note) : '') + '</div></div>' +
-      '<div class="row-right"><div class="row-strong">' + esc(lotSize(l)) + '</div></div>' +
+      (l.note ? ' &middot; ' + esc(l.note) : '') + '</span></span>' +
+      '<span class="row-right"><span class="row-strong">' + esc(lotSize(l)) + '</span></span>' +
       '<span class="row-chevron">&rsaquo;</span></button>';
   }).join('');
 
@@ -1092,6 +1098,7 @@ function renderToast() {
   return '<div class="toast' + (S.toast.kind === 'bad' ? ' toast-bad' : '') + '">' +
     '<span class="toast-msg">' + esc(S.toast.msg) + '</span>' +
     (S.toast.undo ? '<button class="toast-undo" data-act="undo-toast">Undo</button>' : '') +
+    '<button class="toast-close" data-act="hide-toast" aria-label="Dismiss">&times;</button>' +
     '</div>';
 }
 
@@ -1507,6 +1514,11 @@ var ACTIONS = {
   refresh: function () { setState({ modal: null }); load(true); },
 
   'close-modal': function () { setState({ modal: null }); },
+
+  'hide-toast': function () {
+    clearTimeout(toastTimer);
+    setState({ toast: null });
+  },
 
   /* --- add: picking --- */
   'pick-item': function (d) {

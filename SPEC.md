@@ -89,9 +89,12 @@ cannot be expected to reason about state. No confirmation dialogs guarding
 routine work; a 30-second undo instead, plus a session list of what was just
 done. Backend errors read "Please choose which freezer it is in", never a code.
 
-**4. Built for a tablet at a freezer.** Large type, minimum ~54 px touch targets,
-bottom navigation, three tabs and no nesting. Every stepper button states its own
-size (`−50`, `−10`) because an unlabelled `+` is a guess.
+**4. Built for a tablet at a freezer.** Minimum ~54 px touch targets, no text
+below 0.8 rem, and every foreground/background pair at 4.5:1 or better **in both
+themes** — checked at build time by `tools/check-contrast.mjs`, because "large
+type" is an adjective and the tap size was the only half with a number. Bottom
+navigation, three tabs and no nesting. Every stepper button states its own size
+(`−50`, `−10`) because an unlabelled `+` is a guess.
 
 **5. Month and year are what matter; the day is a bonus.** Views lead with
 "Jul 2025" and "1 year 1 month ago". Exact dates are stored where known, for
