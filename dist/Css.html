@@ -476,21 +476,27 @@ button, input, select, textarea {
 
 /* The tick beside a bag while editing. Same tap target as everything else,
    and it carries a tick rather than relying on fill alone. */
+/* A tap-sized target around a box the size Take out draws, rather than a box
+   blown up to the size of the target — which made the same control look twice
+   as big on one tab as the other. */
 .tick {
   flex: none;
+  display: grid;
+  place-items: center;
   width: var(--tap);
   height: var(--tap);
   min-width: var(--tap);
-  border-radius: 10px;
-  border: 2px solid var(--line);
-  background: var(--surface);
-  color: var(--accent-ink);
-  font-size: 1.1rem;
-  line-height: 1;
+  border: 0;
+  background: transparent;
+  padding: 0;
   cursor: pointer;
 }
 
-.tick.is-on { background: var(--accent); border-color: var(--accent); }
+.tick[aria-checked="true"] .pick-box {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
 
 .lot.is-picked { background: var(--surface-2); }
 
@@ -1355,8 +1361,12 @@ body.is-busy .topbar::after {
 
 .is-picked .pick-box { background: var(--warm); border-color: var(--warm); }
 
+/* Fills the row on Take out, where rows are tall. In the bag list on In store
+   the rows are half that, and this was the only target in them — 37 px against
+   the 54 constraint 4 asks for — so it carries its own floor. */
 .row-more {
   flex: none;
+  min-height: var(--tap);
   width: var(--tap);
   border: 0;
   border-left: 1px solid var(--line);

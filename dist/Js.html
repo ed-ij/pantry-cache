@@ -1662,11 +1662,14 @@ function itemRow(lots, key, storeContext) {
     ? '<div class="lots">' + sorted.map(function (l, i) {
         return '<div class="lot' + (S.editing && S.moving[l.id] ? ' is-picked' : '') + '">' +
           (S.editing
-            ? '<button class="tick' + (S.moving[l.id] ? ' is-on' : '') + '" data-act="toggle-move" ' +
+            ? '<button class="tick" data-act="toggle-move" ' +
               'data-id="' + esc(l.id) + '" role="checkbox" ' +
               'aria-checked="' + (S.moving[l.id] ? 'true' : 'false') + '" ' +
               'aria-label="Choose this bag to move">' +
-              (S.moving[l.id] ? '&#10003;' : '') + '</button>'
+              // The same box Take out draws, in a tap-sized target around it,
+              // rather than a box blown up to the size of the target.
+              '<span class="pick-box">' + (S.moving[l.id] ? '&#10003;' : '') + '</span>' +
+              '</button>'
             : '') +
           '<span class="lot-weight">' + esc(lotSize(l)) + '</span>' +
           '<span class="lot-date">' +
