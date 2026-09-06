@@ -266,42 +266,6 @@ through publishing it.
 
 ---
 
-## Importing the old spreadsheet
-
-The hand-kept "Veg in stores" workbook can be converted with:
-
-```bash
-node tools/import-sheet.mjs "~/Documents/Veg in stores JUlY 2026.xlsx"
-```
-
-It reads the original (never writes to it) and produces `dev/data.json` so the
-result can be checked locally, plus `dev/import/{Stores,Items,Inventory}.csv`
-to paste into the Google Sheet tabs.
-
-The script prints a reconciliation against the SUM formulas already in the
-original, which is the quickest way to confirm nothing was lost or double
-counted. The mapping of columns to stores, the item categories and the
-spelling corrections are all constants at the top of the file — adjust them
-there and re-run.
-
-It refuses to overwrite an existing `dev/data.json`, since that would discard
-anything added in the app since the last import; pass `--force` if that is
-genuinely what you want.
-
-### Keeping the CSVs up to date
-
-Anything added or taken out in the local app is written straight to
-`dev/data.json`. To refresh the CSVs from it:
-
-```bash
-npm run export
-```
-
-That rewrites all four tabs — `Stores`, `Items`, `Inventory` and `History` —
-so what you paste into the Google Sheet matches what you last saw on screen.
-
----
-
 ## Working on the code
 
 ```bash

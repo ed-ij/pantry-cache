@@ -7,5 +7,13 @@ node_modules/
 # Local dev store — recreated from dev/seed.json when deleted
 dev/data.json
 
-# Written by `npm run import` from the real spreadsheet
+# Real rows land here if anything ever writes them again. Keep the line: taking
+# it out while such files are still on disk is enough for `git add -A` to sweep
+# them into a commit, which is exactly how it nearly happened.
 dev/import/
+
+# Assistant and editor configuration, the same call as .vscode or .idea. Nothing
+# in here describes the project that package.json and the README do not already
+# say — launch.json only restates the dev command and its port in the format one
+# tool reads — so it belongs to whichever machine wants it.
+.claude/
