@@ -450,6 +450,64 @@ button, input, select, textarea {
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--fz, var(--ink-3)) 40%, transparent);
 }
 
+/* The tick beside a bag while editing. Same tap target as everything else,
+   and it carries a tick rather than relying on fill alone. */
+.tick {
+  flex: none;
+  width: var(--tap);
+  height: var(--tap);
+  min-width: var(--tap);
+  border-radius: 10px;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  color: var(--accent-ink);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tick.is-on { background: var(--accent); border-color: var(--accent); }
+
+.lot.is-picked { background: var(--surface-2); }
+
+/* "Any other colour": a native colour input wearing the same swatch as the
+   presets beside it. The input itself is the target, so it fills the label. */
+.swatch-other {
+  position: relative;
+  display: grid;
+  place-items: center;
+  /* .swatch is also on this element and paints var(--fz, var(--ink-3)); with no
+     --fz set that is a solid grey disc, which hid the "+" against it. */
+  background: transparent;
+  box-shadow: none;
+  width: var(--tap);
+  height: var(--tap);
+  min-width: var(--tap);
+  border-radius: 999px;
+  border: 2px dashed var(--line);
+  color: var(--ink-3);
+  font-size: 1.4rem;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.swatch-other:focus-within {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.swatch-other input[type="color"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
 /* A settings row: label on the left, controls on the right, hairline between. */
 .row-line {
   display: flex;

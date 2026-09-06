@@ -336,6 +336,9 @@ var S = {
   // heading are noise for it. On, the editing affordances appear and catalogue
   // entries with nothing under them become visible so they can be tidied up.
   editing: false,
+  // Bags ticked for moving on In store. Separate from S.selected, which
+  // belongs to Take out and survives a tab change.
+  moving: {},
   version: null,
 
   modal: null,
@@ -603,6 +606,39 @@ function isFirstRun() {
 }
 
 /** A row's colour, falling back to the palette position so it is never unset. */
+/**
+ * The six presets, plus whatever colour this place actually has if it is not
+ * one of them — a colour typed into the spreadsheet, or picked here before —
+ * so the current choice is always visible rather than silently unrepresented.
+ * "Other" is a native colour input, which is the one control on this screen
+ * that is better borrowed than built.
+ */
+function colourSwatches(current, act, extra) {
+  var palette = S.storeColours.length ? S.storeColours : ['#5F8A20'];
+  var cur = (current || '').toLowerCase();
+  var list = palette.slice();
+  if (cur && palette.every(function (c) { return c.toLowerCase() !== cur; })) list.push(current);
+
+  var swatches = list.map(function (c) {
+    var on = cur === c.toLowerCase();
+    return '<button class="swatch' + (on ? ' is-on' : '') + '" style="--fz:' + esc(c) + '" ' +
+      'data-act="' + act + '" data-colour="' + esc(c) + '" ' + extra + ' ' +
+      'aria-label="Colour ' + esc(c) + '" aria-pressed="' + (on ? 'true' : 'false') + '"></button>';
+  }).join('');
+
+  return '<div class="swatches">' + swatches +
+    '<label class="swatch swatch-other" title="Any other colour">' +
+      '<span aria-hidden="true">+</span>' +
+      '<input type="color" value="' + esc(current || palette[0]) + '" ' +
+        'data-act="' + act + '" ' + extra + ' aria-label="Any other colour">' +
+    '</label>' +
+  '</div>';
+}
+
+function swatchValue(d, el) {
+  return el && el.tagName === 'INPUT' ? el.value : d.colour;
+}
+
 function storeDraftColour(row, i) {
   return row.colour || S.storeColours[i % (S.storeColours.length || 1)] || '#5F8A20';
 }
@@ -629,12 +665,7 @@ function renderFirstRun() {
     }).join('');
 
   var cards = rows.map(function (row, i) {
-    var swatches = palette.map(function (c) {
-      var on = storeDraftColour(row, i).toLowerCase() === c.toLowerCase();
-      return '<button class="swatch' + (on ? ' is-on' : '') + '" style="--fz:' + esc(c) + '" ' +
-        'data-act="store-colour" data-row="' + i + '" data-colour="' + esc(c) + '" ' +
-        'aria-label="Colour ' + esc(c) + '" aria-pressed="' + (on ? 'true' : 'false') + '"></button>';
-    }).join('');
+    var swatches = colourSwatches(storeDraftColour(row, i), 'store-colour', 'data-row="' + i + '"');
 
     return '<div class="card stack">' +
       '<div class="row">' +
@@ -659,7 +690,7 @@ function renderFirstRun() {
 
       '<div>' +
         '<span class="label">Which colour marks it?</span>' +
-        '<div class="swatches">' + swatches + '</div>' +
+        swatches +
       '</div>' +
     '</div>';
   }).join('');
@@ -1177,7 +1208,7 @@ function renderView() {
         : 'Nothing is stored yet. Add something on the <b>Put in</b> tab.') +
       '</div>';
 
-  return head + body + renderRecentTakes() + '</div>';
+  return head + body + renderRecentTakes() + '</div>' + renderMoveBar();
 }
 
 /** The store filter, shared by both tabs, with each chip carrying its total. */
@@ -1244,6 +1275,35 @@ function renderProblems() {
  * The spreadsheet is the real database, so give it a visible door: this is how
  * you add a store, rename something, or fix a mistake the app cannot.
  */
+/**
+ * Only on In store, only while editing, and only once something is ticked —
+ * so nothing about the ordinary browsing screen changes until it is asked for.
+ */
+function renderMoveBar() {
+  if (!S.editing || S.tab !== 'view') return '';
+  var picked = Object.keys(S.moving);
+  var lots = picked.map(lotById).filter(Boolean);
+  if (!lots.length) return '';
+
+  var where = {};
+  lots.forEach(function (l) { where[l.store] = 1; });
+  var from = Object.keys(where);
+
+  return '<div class="pickbar">' +
+    '<div class="pickbar-inner">' +
+      '<button class="btn btn-ghost btn-compact" data-act="clear-moves">Clear</button>' +
+      '<div class="spacer">' +
+        '<div style="font-weight:700">' + lots.length + (lots.length === 1 ? ' bag' : ' bags') + ' chosen</div>' +
+        '<div class="small muted">' +
+          (from.length === 1 ? 'in the ' + esc(from[0]) : 'across ' + from.length + ' places') +
+        '</div>' +
+      '</div>' +
+      '<button class="btn btn-primary" data-act="open-move"' + (S.busy ? ' disabled' : '') + '>' +
+        'Move&hellip;</button>' +
+    '</div>' +
+  '</div>';
+}
+
 function renderSheetLink() {
   return '<div class="card">' +
     '<div class="card-title">Where all this is kept</div>' +
@@ -1326,7 +1386,14 @@ function itemRow(lots, key, storeContext) {
 
   var detail = open
     ? '<div class="lots">' + sorted.map(function (l, i) {
-        return '<div class="lot">' +
+        return '<div class="lot' + (S.editing && S.moving[l.id] ? ' is-picked' : '') + '">' +
+          (S.editing
+            ? '<button class="tick' + (S.moving[l.id] ? ' is-on' : '') + '" data-act="toggle-move" ' +
+              'data-id="' + esc(l.id) + '" role="checkbox" ' +
+              'aria-checked="' + (S.moving[l.id] ? 'true' : 'false') + '" ' +
+              'aria-label="Choose this bag to move">' +
+              (S.moving[l.id] ? '&#10003;' : '') + '</button>'
+            : '') +
           '<span class="lot-weight">' + esc(lotSize(l)) + '</span>' +
           '<span class="lot-date">' +
             (l.dateIn ? esc(fmtWhen(l)) + ' &middot; ' + esc(ageText(l.dateIn)) : 'date not recorded') +
@@ -1490,6 +1557,7 @@ function renderModal() {
   if (m.kind === 'unit') return modalUnit(m);
   if (m.kind === 'edit') return modalEdit(m);
   if (m.kind === 'split') return modalSplit(m);
+  if (m.kind === 'move') return modalMove(m);
   if (m.kind === 'store') return modalStore(m);
   if (m.kind === 'rename') return modalRename(m);
   return '';
@@ -1851,18 +1919,41 @@ function renameCollision(m) {
   return cat ? 'There is already a group called &ldquo;' + esc(cat) + '&rdquo;. The two will be merged.' : null;
 }
 
+function modalMove(m) {
+  var lots = Object.keys(S.moving).map(lotById).filter(Boolean);
+  var where = {};
+  lots.forEach(function (l) { where[l.store] = 1; });
+
+  var from = Object.keys(where);
+  var only = from.length === 1 ? from[0] : null;
+
+  var options = S.stores.map(function (f) {
+    // Somewhere every chosen bag already is would be a move to nowhere.
+    var pointless = !!only && norm(only) === norm(f.name);
+    return '<button class="btn btn-block" data-act="do-move" data-name="' + esc(f.name) + '"' +
+      (pointless || S.busy ? ' disabled' : '') + '>' +
+      dot(f.colour) + ' ' + esc(f.name) +
+      (pointless ? ' <span class="muted small">(already there)</span>' : '') + '</button>';
+  }).join('');
+
+  return wrap(
+    '<h2 class="modal-title">Move ' + lots.length + (lots.length === 1 ? ' bag' : ' bags') + '</h2>' +
+    '<p class="muted" style="margin-top:0">Where are they now? This only changes where they are ' +
+      'kept &mdash; nothing is taken out, and it can be undone.</p>' +
+    '<div class="stack" style="margin-top:16px">' + options + '</div>' +
+    '<div class="row" style="margin-top:20px">' +
+      '<button class="btn btn-ghost" data-act="close-modal">Cancel</button>' +
+    '</div>'
+  );
+}
+
 function modalStore(m) {
   var palette = S.storeColours.length ? S.storeColours : ['#5F8A20'];
   var taken = S.stores.some(function (f) {
     return norm(f.name) !== norm(m.from) && norm(f.name) === norm(tidyName(m.name));
   });
 
-  var swatches = palette.map(function (c) {
-    var on = (m.colour || '').toLowerCase() === c.toLowerCase();
-    return '<button class="swatch' + (on ? ' is-on' : '') + '" style="--fz:' + esc(c) + '" ' +
-      'data-act="store-edit-colour" data-colour="' + esc(c) + '" ' +
-      'aria-label="Colour ' + esc(c) + '" aria-pressed="' + (on ? 'true' : 'false') + '"></button>';
-  }).join('');
+  var swatches = colourSwatches(m.colour, 'store-edit-colour', '');
 
   var bags = S.inventory.filter(function (l) { return norm(l.store) === norm(m.from); }).length;
 
@@ -1887,8 +1978,7 @@ function modalStore(m) {
         '<span class="muted small">optional</span></label>' +
         '<input class="input" id="store-edit-where" type="text" placeholder="Chest freezer by the door" ' +
           'value="' + esc(m.where) + '" data-act="store-edit-where"></div>' +
-      '<div><span class="label">Which colour marks it?</span>' +
-        '<div class="swatches">' + swatches + '</div></div>' +
+      '<div><span class="label">Which colour marks it?</span>' + swatches + '</div>' +
     '</div>' +
 
     '<div class="row" style="margin-top:20px">' +
@@ -2312,8 +2402,19 @@ var ACTIONS = {
     setState({});
   },
   'toggle-editing': function () {
-    setState({ editing: !S.editing });
+    // Ticks are invisible with editing off, and acting on an invisible
+    // selection later would be a surprise.
+    setState({ editing: !S.editing, moving: {} });
   },
+  'toggle-move': function (d) {
+    var picked = Object.assign({}, S.moving);
+    if (picked[d.id]) delete picked[d.id]; else picked[d.id] = true;
+    setState({ moving: picked });
+  },
+  'clear-moves': function () { setState({ moving: {} }); },
+  'open-move': function () { setState({ modal: { kind: 'move' } }); },
+  'do-move': function (d) { doMove(d.name); },
+
   'open-store-edit': function (d) {
     var f = S.stores.filter(function (x) { return x.name === d.name; })[0];
     if (!f) return;
@@ -2325,8 +2426,8 @@ var ACTIONS = {
   'store-edit-where': function (d, el) {
     setState({ modal: Object.assign({}, S.modal, { where: el.value }) });
   },
-  'store-edit-colour': function (d) {
-    setState({ modal: Object.assign({}, S.modal, { colour: d.colour }) });
+  'store-edit-colour': function (d, el) {
+    setState({ modal: Object.assign({}, S.modal, { colour: swatchValue(d, el) }) });
   },
   'do-edit-store': function () { doEditStore(); },
 
@@ -2352,8 +2453,10 @@ var ACTIONS = {
     firstRunDraft()[Number(d.row)].where = el.value;
     setState({});
   },
-  'store-colour': function (d) {
-    firstRunDraft()[Number(d.row)].colour = d.colour;
+  // Fires from a preset button (data-colour) and from the native picker
+  // (its value), which is why the source is checked rather than assumed.
+  'store-colour': function (d, el) {
+    firstRunDraft()[Number(d.row)].colour = swatchValue(d, el);
     setState({});
   },
   'store-suggest': function (d) {
@@ -2569,6 +2672,28 @@ function doCheckUpdates() {
     // Not fail(): a version check that cannot run is worth saying plainly in
     // place, rather than as a red toast over whatever else is on screen.
     setState({ version: { error: 'Could not check just now. The spreadsheet menu can also tell you.' } });
+  });
+}
+
+function doMove(to) {
+  var ids = Object.keys(S.moving);
+  if (!ids.length) return;
+
+  setState({ busy: true, modal: null });
+  api('apiMoveBags', { ids: ids, to: to }).then(function (res) {
+    done();
+    S.moving = {};
+    return load(false).then(function () {
+      toast(res.moved + (res.moved === 1 ? ' bag' : ' bags') + ' moved to the ' + res.to, res.undo);
+    });
+  }).catch(function (e) {
+    S.busy = false;
+    // The usual reason is a selection that has gone stale, and the backend
+    // refuses the whole move in that case — so re-read rather than leaving
+    // ticks beside bags that are no longer there.
+    S.moving = {};
+    load(false);
+    fail(e);
   });
 }
 

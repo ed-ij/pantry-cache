@@ -1015,6 +1015,65 @@ function apiEditStore(p) {
   });
 }
 
+/**
+ * Moves bags from wherever they are into one place. The freezer filled up and
+ * half of it went out to the garage: that is one action about several bags, and
+ * doing it a bag at a time through the edit dialog is the sort of errand people
+ * stop doing, after which the app is wrong about where things are.
+ *
+ * History is deliberately untouched. It records what was taken out of where,
+ * and a bag that is still in a store has not been taken out of anywhere — so
+ * moving it now says nothing about what happened then.
+ */
+function apiMoveBags(p) {
+  const ids = (p && p.ids) || [];
+  const to = cleanName(p && p.to);
+  if (!ids.length) throw new Error('Choose some bags to move first.');
+  if (!to) throw new Error('Which place are they going to?');
+
+  return DB.lock(function () {
+    DB.ensure();
+
+    const place = DB.getAll('Stores').filter(function (r) {
+      return keyOf(txt(r.Name)) === keyOf(to);
+    })[0];
+    if (!place) throw new Error('There is no place called ' + to + '.');
+    const target = txt(place.Name);
+
+    // Read and check everything before writing anything: a selection made on a
+    // screen that has since gone stale should be refused whole rather than
+    // applied to whichever half is still there.
+    const byId = {};
+    DB.getAll('Inventory').forEach(function (r) { byId[txt(r.ID)] = r; });
+
+    const from = {};
+    ids.forEach(function (id) {
+      const row = byId[txt(id)];
+      if (!row) {
+        throw new Error(
+          'Some of those bags are no longer in a store. Nothing has been moved ' +
+          '\u2014 the list will refresh so you can choose again.');
+      }
+      // Each bag's own place, so an undo can put a mixed selection back where
+      // each one came from rather than gathering them all in the first.
+      from[txt(id)] = txt(row.Store);
+    });
+
+    const want = {};
+    ids.forEach(function (id) { want[txt(id)] = true; });
+
+    const moved = DB.updateColumn('Inventory', 'Store', function (v, id) {
+      return want[txt(id)] ? target : undefined;
+    });
+
+    return {
+      moved: moved,
+      to: target,
+      undo: issueUndo_({ type: 'move-bags', from: from, to: target }),
+    };
+  });
+}
+
 function apiRenameItem(p) {
   const from = cleanName(p && p.from);
   const to = cleanName(p && p.to);
@@ -1136,6 +1195,14 @@ function apiUndo(handle) {
     if (token.type === 'delete-item') {
       DB.append('Items', [token.row]);
       return { undone: 'delete-item' };
+    }
+
+    if (token.type === 'move-bags') {
+      DB.updateColumn('Inventory', 'Store', function (v, id) {
+        const back = token.from[txt(id)];
+        return back === undefined ? undefined : back;
+      });
+      return { ok: true };
     }
 
     if (token.type === 'edit-store') {

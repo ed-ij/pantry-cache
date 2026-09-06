@@ -75,7 +75,7 @@ const code = readFileSync(join(SRC, 'backend.js'), 'utf8');
 B = new Function('DB', `${code}
   return { TABLES, SUGGESTED_STORES, apiGetState, apiAdd, apiRemove, apiRemovePart, apiUndo,
            apiEditLot, apiSplitLot, apiRenameItem, apiRenameCategory, apiSaveStores,
-           apiDeleteItem, apiEditStore };`)(DB);
+           apiDeleteItem, apiEditStore, apiMoveBags };`)(DB);
 
 const stock = () => B.apiGetState().inventory;
 const keyish = (v) => String(v || '').trim().toLowerCase();
@@ -603,6 +603,75 @@ placeFixture();
 B.apiEditStore({ from: 'Shed', to: 'Shed' });
 assert.equal(invIn('Shed'), 2, 'renaming to the same name is harmless');
 assert.equal(placesNamed('Shed').length, 1, 'and does not duplicate the row');
+
+/* ===================================================================
+   apiMoveBags — "these are actually in the garage now". Moving is about
+   where things are, not about what has happened to them.
+   =================================================================== */
+
+const bagsIn = (n) => B.apiGetState().inventory.filter((l) => l.store === n);
+const idsOf = (n) => bagsIn(n).map((l) => l.id);
+
+/* --- the ordinary case --- */
+placeFixture();
+const toGarage = B.apiMoveBags({ ids: idsOf('Shed'), to: 'Garage' });
+assert.equal(bagsIn('Garage').length, 2, 'both bags arrive');
+assert.equal(bagsIn('Shed').length, 0, 'and leave where they were');
+assert.equal(bagsIn('Kitchen').length, 1, 'a bag nobody chose does not move');
+
+/* --- History is the record of what was taken out of where, and moving a bag
+   that is still in a store says nothing about that. It must not be rewritten. --- */
+assert.equal(histIn('Shed'), 1, 'History still says the beans came out of the Shed');
+assert.equal(histIn('Garage'), 0, 'and does not claim they came out of the Garage');
+
+/* --- undo --- */
+B.apiUndo(toGarage.undo);
+assert.equal(bagsIn('Shed').length, 2, 'undo brings them back');
+assert.equal(bagsIn('Garage').length, 0, 'and empties where they went');
+
+/* --- THE HARD ONE: bags chosen from different places must each go back to
+   their own on undo, not all to whichever one was first. --- */
+placeFixture();
+const mixed = idsOf('Shed').concat(idsOf('Kitchen'));
+assert.equal(mixed.length, 3, 'fixture: three bags, from two different places');
+const gathered = B.apiMoveBags({ ids: mixed, to: 'Garage' });
+assert.equal(bagsIn('Garage').length, 3, 'all three gather in one place');
+
+B.apiUndo(gathered.undo);
+assert.equal(bagsIn('Shed').length, 2, 'the two from the Shed go back to the Shed');
+assert.equal(bagsIn('Kitchen').length, 1, 'and the one from the Kitchen to the Kitchen');
+assert.equal(bagsIn('Garage').length, 0, 'with none left behind');
+
+/* --- moving a bag to where it already is, mixed in with real moves --- */
+placeFixture();
+const already = idsOf('Kitchen');
+const withNoop = B.apiMoveBags({ ids: idsOf('Shed').concat(already), to: 'Kitchen' });
+assert.equal(bagsIn('Kitchen').length, 3, 'the two move, the one that was there stays');
+B.apiUndo(withNoop.undo);
+assert.equal(bagsIn('Kitchen').length, 1, 'undo leaves the one that never moved alone');
+assert.equal(bagsIn('Shed').length, 2, 'and returns the two that did');
+
+/* --- refusals, none of which may move anything --- */
+placeFixture();
+assert.throws(() => B.apiMoveBags({ ids: idsOf('Shed'), to: 'Nowhere' }), /no place called/i,
+  'moving to a place that does not exist is refused');
+assert.throws(() => B.apiMoveBags({ ids: [], to: 'Garage' }), /choose some bags/i,
+  'moving nothing is refused');
+assert.throws(() => B.apiMoveBags({ ids: idsOf('Shed'), to: '  ' }), /which place/i,
+  'moving to nowhere named is refused');
+assert.throws(() => B.apiMoveBags({ ids: ['NOT-A-BAG'], to: 'Garage' }), /no longer/i,
+  'a bag that has since gone is refused rather than silently skipped');
+assert.equal(bagsIn('Shed').length, 2, 'no refusal moved a bag');
+assert.equal(bagsIn('Garage').length, 0, 'and none arrived anywhere');
+
+/* --- a partly-stale selection is refused whole, not applied halfway --- */
+placeFixture();
+assert.throws(
+  () => B.apiMoveBags({ ids: idsOf('Shed').concat(['GONE']), to: 'Garage' }),
+  /no longer/i,
+  'one missing bag refuses the whole move',
+);
+assert.equal(bagsIn('Shed').length, 2, 'and the good ones stayed put');
 
 seedStores = true;
 
