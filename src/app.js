@@ -500,13 +500,24 @@ function render() {
 var modalKey = null;
 var focusBeforeModal = null;
 
+var lastModalHtml = '';
+
 function syncModal() {
   var host = $('#modal-host');
+
+  // The keypad is the one dialog that is typed into rather than tapped once, so
+  // it is worth updating rather than rebuilding.
+  if (S.modal && S.modal.kind === 'keypad' && host.open &&
+      modalKey === 'keypad:' + (S.modal.id || '') && patchKeypad(S.modal)) {
+    return;
+  }
+
   var want = S.modal ? renderModal() : '';
 
   if (!want) {
     if (host.open) host.close();
     host.innerHTML = '';
+    lastModalHtml = '';
     modalKey = null;
     if (focusBeforeModal && document.contains(focusBeforeModal)) focusBeforeModal.focus();
     focusBeforeModal = null;
@@ -515,7 +526,12 @@ function syncModal() {
 
   var opening = !host.open;
   if (opening) focusBeforeModal = document.activeElement;
-  host.innerHTML = want;
+  // Identical markup still destroys and recreates every node in it, losing any
+  // press or focus that was live at the time.
+  if (want !== lastModalHtml) {
+    host.innerHTML = want;
+    lastModalHtml = want;
+  }
   if (opening) host.showModal();
 
   // Only move focus when a different dialog appears, not on every keystroke
@@ -1759,7 +1775,8 @@ function modalCategory(m) {
  * because typing a number beats hunting for it with arrows. Shared by the
  * Put in form and the part-take-out dialog via `m.target`.
  */
-function modalKeypad(m) {
+/** Everything the keypad shows that depends on what has been typed. */
+function keypadValues(m) {
   var isWeight = !m.unit || m.unit === 'g';
   var oz = isWeight && m.oz;
 
@@ -1775,6 +1792,55 @@ function modalKeypad(m) {
   } else if (isWeight && capped >= 1000) {
     note = 'That is ' + (capped / 1000).toFixed(2).replace(/\.?0+$/, '') + ' kg.';
   }
+
+  return { isWeight: isWeight, oz: oz, capped: capped, note: note };
+}
+
+/** The display, the note and the button label — the three things a keypress moves. */
+function keypadFace(m) {
+  var v = keypadValues(m);
+  return {
+    digits: m.digits === '' ? '<span class="muted">0</span>' : esc(m.digits),
+    unit: esc(v.oz ? 'oz' : (m.unit || 'g')),
+    note: esc(v.note),
+    action: (m.target === 'part' ? 'Take ' : 'Use ') +
+      esc(v.isWeight ? fmtW(v.capped) : fmtCount(v.capped, m.unit)),
+    enabled: v.capped >= 1,
+    oz: !!v.oz,
+  };
+}
+
+/**
+ * Writes only those three, leaving the keys in the DOM. Rewriting the whole
+ * dialog per keystroke tore the buttons out from under the finger pressing
+ * them: no pressed state, and a tap landing mid-rewrite hit a node that had
+ * already gone. Returns false when the layout itself has to change — switching
+ * grams to ounces swaps the last key — so the caller can fall back.
+ */
+function patchKeypad(m) {
+  var host = $('#modal-host');
+  var display = host.querySelector('.keypad-number');
+  var apply = host.querySelector('[data-act="keypad-apply"]');
+  if (!display || !apply) return false;
+
+  var face = keypadFace(m);
+  var lastKey = host.querySelector('.keypad .key:nth-last-child(2)');
+  if (!lastKey || lastKey.textContent !== (face.oz ? '.' : '00')) return false;
+
+  display.innerHTML = face.digits;
+  host.querySelector('.keypad-unit').textContent = face.unit;
+  host.querySelector('.keypad-note').textContent = face.note;
+  apply.textContent = face.action;
+  apply.disabled = !face.enabled;
+  return true;
+}
+
+function modalKeypad(m) {
+  var v = keypadValues(m);
+  var isWeight = v.isWeight;
+  var oz = v.oz;
+  var capped = v.capped;
+  var note = v.note;
 
   // The last key earns its place differently in each mode: "00" saves taps on
   // round gram weights, a decimal point is what half-ounces need.
