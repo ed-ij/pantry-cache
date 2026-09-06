@@ -1658,13 +1658,19 @@ function modalTake(m) {
     '<p class="muted" style="margin-top:0">' + esc(lotSize(l)) + ' in the ' + esc(l.store) + ' store' +
       (l.dateIn ? ' &middot; put in ' + esc(fmtWhen(l)) + ' (' + esc(ageText(l.dateIn)) + ')' : ' &middot; date not recorded') +
       (l.note ? ' &middot; ' + esc(l.note) : '') + '</p>' +
+    // Four peers, one weight between them. Changing and splitting a bag can be
+    // reached from nowhere else, while taking one out has a tab of its own where
+    // several go at once — so they lead, and nothing here is dressed as the
+    // thing you came to do. A warm hero on "Take all" also meant arriving from
+    // In store's Details, or from Take out's chevron, and being shown removal as
+    // the answer to a question that was not asked.
     '<div class="stack" style="margin-top:18px">' +
-      '<button class="btn btn-warm btn-hero btn-block" data-act="do-take" data-id="' + esc(l.id) + '">' +
+      '<button class="btn btn-block" data-act="open-edit" data-id="' + esc(l.id) + '">' +
+        '&#9998; Change this bag</button>' +
+      '<button class="btn btn-block" data-act="open-split" data-id="' + esc(l.id) + '">' +
+        'Split it into several&hellip;</button>' +
+      '<button class="btn btn-block" data-act="do-take" data-id="' + esc(l.id) + '">' +
         'Take all ' + esc(lotSize(l)) + ' out</button>' +
-      // "Change this bag" used to be the only route to editing, which meant
-      // correcting a wrong date started by acting as though you were removing
-      // the bag. It is a peer of taking out, not a footnote to it.
-      ''  +
       (splittable
         ? '<button class="btn btn-block" data-act="open-part" data-id="' + esc(l.id) + '">' +
           (l.count > 1 ? 'Take only some of them' : 'Take only part of it') + '</button>'
@@ -1673,10 +1679,6 @@ function modalTake(m) {
         ? '<div class="muted small" style="margin-top:-4px">Taking part of it needs a weight ' +
           '&mdash; add one under &ldquo;Change this bag&rdquo;.</div>'
         : '') +
-      '<div class="row" style="gap:8px">' +
-        '<button class="btn" style="flex:1" data-act="open-edit" data-id="' + esc(l.id) + '">&#9998; Change</button>' +
-        '<button class="btn" style="flex:1" data-act="open-split" data-id="' + esc(l.id) + '">Split&hellip;</button>' +
-      '</div>' +
       '<button class="btn btn-ghost btn-block" data-act="close-modal">Cancel</button>' +
     '</div>'
   );
