@@ -10,13 +10,14 @@ are in [SPEC.md](SPEC.md). Three things it does:
 | Tab | What it is for |
 | --- | --- |
 | **Put in** | Pick an item from a grid grouped by category, or type a new name. Set a weight and/or a count of pieces, say how many bags, choose a store, confirm. Dated today by default, easy to backdate. |
-| **In store** | **By item** (grouped under Fruit / Vegetables / Herbs / …) or **By age** (oldest first, grouped by month), filtered by store and searchable. The store chips carry their own totals, so the filter row doubles as the overview. |
-| **Take out** | Oldest-first list you can filter by store or search. One tap to take a bag out, with an Undo. |
+| **In store** | Everything grouped under Fruit / Vegetables / Herbs / …, filtered by store and searchable. Totals across the top, and the store chips carry their own, so the filter row doubles as the overview. Tap an item to see its individual bags. |
+| **Take out** | Oldest first, grouped by month, filtered and searched the same way. Tick everything you are cooking with and take the lot out in one go, with an Undo. |
 
-Tapping any bag also offers **Change this bag…**, which can put right its
-store, date, weight, count or note, or split it into several bags. Items and
-categories can be renamed from the **In store** tab. Every one of those
-is undoable.
+Tapping a bag on **In store** also offers **Change this bag**, which can put
+right its store, date, weight, count or note, or split it into several.
+
+Behind the **&#9881;** in the top right is a settings screen — see
+[Settings](#settings). Everything either tab can do is undoable.
 
 ---
 
@@ -46,7 +47,7 @@ as it is.
 
 ## The spreadsheet
 
-Open it any time from the app itself (bottom of the **In store** tab) or
+Open it any time from the app itself (**&#9881; → Where all this is kept**) or
 from Google Drive. **File → Download → Microsoft Excel (.xlsx)** gives a real
 Excel file whenever one is wanted.
 
@@ -59,10 +60,11 @@ Excel file whenever one is wanted.
 | `Category` | e.g. `Fruit` |
 | `Store` | Must match a name on the `Stores` tab |
 | `Weight (g)` | **Grams**, as a plain number. 1.5 kg is `1500`. Blank if it was never weighed. |
-| `Date In` | A real date. Only the month and year matter for the views. |
+| `Date In` | A real date. The lists show its month; the exact day is on the bag itself, behind the **›**. |
 | `Note` | Free text, optional |
 | `Count` | How many pieces are in the bag — 6 cobs, 4 portions. Blank if it is only weighed. |
 | `Unit` | What those pieces are called. Goes with `Count`. |
+| `Month only` | `yes` when only the month was known going in. The day in `Date In` is then a placeholder and is never shown anywhere. Blank otherwise. |
 
 ### `History` — what has been used up
 
@@ -80,7 +82,8 @@ vs `Raspberries`) and the suggestions improve.
 ### `Stores`
 
 `Name`, `Where`, `Colour`. Add a row to add a store; the app picks it up on
-the next reload.
+the next reload. Easier from the app: **&#9881; → Places → Add a place**, which
+picks the colour for you.
 
 ### Editing by hand
 
@@ -88,8 +91,9 @@ Safe to do at any time. A few rules:
 
 - **Don't rename or reorder the columns**, and don't insert new ones — the app
   reads them by position.
-- Renaming a store on the `Stores` tab does *not* rename it in `Inventory`;
-  use Find & Replace on that column too.
+- Renaming a store on the `Stores` tab does *not* rename it in `Inventory` or
+  `History`. Use **&#9881; → Places → Edit** instead: it renames every row on
+  both tabs in one go, and can be undone. By hand it is a Find & Replace on each.
 - If a tab gets deleted or mangled, **Pantry Cache → Set up / repair sheets**
   puts the headers back.
 - The app reads the sheet when it loads. After editing by hand, tap the ↻ button
@@ -131,8 +135,8 @@ heads shows its weight alone, rather than inventing a total of ten of nothing.
 
 ## Putting mistakes right
 
-Nothing has to be deleted and re-entered. Tap a bag anywhere it appears and
-choose **Change this bag…**:
+Nothing has to be deleted and re-entered. Tap a bag on **In store** and choose
+**Change this bag**:
 
 - **Store, date, weight, count, unit, note** — all editable, with the same
   controls used when the bag went in.
@@ -141,7 +145,7 @@ choose **Change this bag…**:
   with any remainder going to the first bags. Useful once something is being
   used a portion at a time rather than all at once.
 
-**Renaming** is on the **In store** tab, under **By item**:
+**Renaming** needs **Editing** switched on under the cog. On **In store** then:
 
 - The pencil beside a category heading renames the category.
 - Expanding an item shows **Rename "…"** beneath its bags.
@@ -151,6 +155,40 @@ records stay consistent with the new name. Renaming onto a name that already
 exists merges them rather than leaving two catalogue entries.
 
 All of these can be undone from the toast, same as everything else.
+
+Several bags at once — everything that came out of one drawer, say — is
+**Editing → tick them on In store → Move**, described below.
+
+---
+
+## Settings
+
+The **&#9881;** in the top right, beside the running total.
+
+**How it looks.** Light, dark, or match the tablet. Separately, whether the
+lists date a bag (*October 2025*) or age it (*11 months ago*). **Take out**
+keeps its month headings whichever you pick, and the exact day is always on the
+bag itself, behind the **›** — where it is shown both ways at once.
+
+**Editing.** Off by default, because the pencils and tick boxes are noise when
+you are only looking something up. On, it adds three things:
+
+- the rename pencils on **In store**, beside categories and under items;
+- a tick box on every bag, and a bar along the bottom to **Move** the ones you
+  tick to another place — all-or-nothing, and undoable as one action;
+- a list of items in the catalogue with nothing stored under them, to rename or
+  remove. Anything that has been stored before is marked **kept** and cannot be
+  removed: the type-ahead reads `History` as well as `Items`, so deleting the
+  catalogue row would not stop it being suggested, and `History` is the record.
+
+**Places.** Add one, or edit a name, its *where*, and its colour. Renaming here
+reaches `Inventory` and `History` both — the thing a Find & Replace on the
+`Stores` tab does not do.
+
+**This copy.** Its build date and commit, and whether a newer version has been
+published. That is the version to quote in a bug report.
+
+**Where all this is kept.** The link to the spreadsheet behind it all.
 
 ---
 
