@@ -429,13 +429,15 @@ button, input, select, textarea {
     /* Mixing with white raises lightness by destroying chroma, so every store
        colour arrived at the same washed pastel and the picker's saturation
        axis stopped meaning anything. Lifting lightness in oklch leaves chroma
-       alone, which keeps both axes legible on a dark card.
+       alone, which keeps both axes legible on a dark card. The chroma is
+       lifted a quarter as well: the lightest row still drifted toward pastel
+       otherwise, and green worst of all, where the gamut runs out first.
 
        Three declarations, oldest first: the raw colour for anything without
        color-mix, the old white mix for Safari 16.2, and the lift for 16.4. */
     background: var(--fz, var(--ink-3));
     background: color-mix(in oklab, var(--fz, var(--ink-3)) 78%, #ffffff);
-    background: oklch(from var(--fz, var(--ink-3)) calc(l + 0.12) c h);
+    background: oklch(from var(--fz, var(--ink-3)) calc(l + 0.10) calc(c * 1.25) h);
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
   }
 
@@ -448,7 +450,7 @@ button, input, select, textarea {
        under one rule and drawn under another. */
     background: var(--raw);
     background: color-mix(in oklab, var(--raw) 78%, #ffffff);
-    background: oklch(from var(--raw) calc(l + 0.12) c h);
+    background: oklch(from var(--raw) calc(l + 0.10) calc(c * 1.25) h);
   }
   
   /* The tint has to be mixed against the dark surface, not the light one, or
@@ -469,7 +471,7 @@ button, input, select, textarea {
      color-mix, the old white mix for Safari 16.2, and the lift for 16.4. */
   background: var(--fz, var(--ink-3));
   background: color-mix(in oklab, var(--fz, var(--ink-3)) 78%, #ffffff);
-  background: oklch(from var(--fz, var(--ink-3)) calc(l + 0.12) c h);
+  background: oklch(from var(--fz, var(--ink-3)) calc(l + 0.10) calc(c * 1.25) h);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
 }
 
@@ -478,7 +480,7 @@ button, input, select, textarea {
      under one rule and drawn under another. */
   background: var(--raw);
   background: color-mix(in oklab, var(--raw) 78%, #ffffff);
-  background: oklch(from var(--raw) calc(l + 0.12) c h);
+  background: oklch(from var(--raw) calc(l + 0.10) calc(c * 1.25) h);
 }
 
 /* The tint has to be mixed against the dark surface, not the light one, or

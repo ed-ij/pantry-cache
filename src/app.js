@@ -651,7 +651,7 @@ function paletteColours() {
  */
 var HUE_STEPS = 360;
 var SATS = [32, 48, 64, 80, 94];
-var LUMS = [64, 52, 40, 28];
+var LUMS = [58, 48, 38, 28];
 
 function hexToHsl(hex) {
   var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
