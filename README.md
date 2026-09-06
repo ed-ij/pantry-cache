@@ -253,10 +253,53 @@ All of these can be undone from the toast, same as everything else.
 ## Giving it to someone else
 
 Each person gets their own copy, in their own Google account, with their own web
-app and their own data — see [SHARING.md](SHARING.md). The short version is that
-replacing `/edit` with `/copy` in the template's URL gives a link that hands
-people their own copy, and the **Pantry Cache** menu in that copy walks them
-through publishing it.
+app and their own data. Send them [INSTALL.md](INSTALL.md) and a copy link;
+between the two, they need nothing from you.
+
+### The template
+
+Keep one spreadsheet as the master, on whichever account should own it, and
+never put real data in it.
+
+1. Follow **One-time setup** above, steps 1–4. Stop before deploying.
+2. Leave `Stores`, `Inventory`, `History` and `Items` empty. The app asks a new
+   copy where things are kept the first time it opens, so example stores in the
+   template only become rows somebody has to delete.
+3. Do **not** deploy the template. Each person deploys their own.
+
+Whenever a release goes out, bring the template up to date the same way anybody
+else does — **Pantry Cache → Check for updates** — or new copies start behind.
+
+### The link
+
+Take the template's URL and replace `/edit` with `/copy`:
+
+```
+https://docs.google.com/spreadsheets/d/FILE_ID/copy
+```
+
+Set the file's sharing to **Anyone with the link — Viewer**, so the link works
+for people you have not individually invited. Opening it offers them
+**Make a copy**; the copy lands in their Drive with the script attached and
+running as them. They cannot edit your template, and you cannot see their copy.
+
+---
+
+## Publishing an update
+
+```bash
+npm run build
+npm run release -- "What changed, in one sentence."
+git add -A && git commit -m "…" && git push
+```
+
+Pushing *is* publishing: the in-sheet dialog reads `latest.json` and `dist/`
+straight from the repository, on the branch the copy was built from. Build on
+`main`, or copies will be told to follow unreleased work.
+
+Nothing is pulled until someone opens that menu and chooses to, so a bad release
+cannot reach anyone's list on its own. Each copy shows its build date at the
+bottom of **Open the app / get my link**, so a bug report can name a version.
 
 ---
 

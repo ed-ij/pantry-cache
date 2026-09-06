@@ -1,8 +1,8 @@
 # Pantry Cache — specification
 
 What the app is, why it is shaped the way it is, and what it deliberately does
-not do. For how to build, deploy or share it, see [README](README.md) and
-[SHARING](SHARING.md).
+not do. For how to build, deploy or share it, see [README](README.md); for
+setting up a copy of your own, [INSTALL](INSTALL.md).
 
 ---
 
