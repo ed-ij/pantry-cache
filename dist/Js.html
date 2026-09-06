@@ -97,11 +97,14 @@ function fmtW(g) {
  * A total across many bags, where the gram is noise rather than a fact somebody
  * entered — nobody weighed the freezer, and "38.954 kg" in the header reads as
  * false precision about a number that changes with every bag.
+ *
+ * One decimal, so the nearest 100 g. The question a total answers is roughly how
+ * much is in there, and it is read at a glance from across a kitchen.
  */
 function fmtWTotal(g) {
   g = Math.round(Number(g) || 0);
   if (g < 1000) return g + ' g';
-  return (g / 1000).toFixed(2).replace(/\.?0+$/, '') + ' kg';
+  return (g / 1000).toFixed(1).replace(/\.0$/, '') + ' kg';
 }
 
 function parseISO(iso) {
