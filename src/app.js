@@ -1176,7 +1176,7 @@ function renderView() {
         : 'Nothing is stored yet. Add something on the <b>Put in</b> tab.') +
       '</div>';
 
-  return head + body + renderRecentTakes() + renderSheetLink() + '</div>';
+  return head + body + renderRecentTakes() + '</div>';
 }
 
 /** The store filter, shared by both tabs, with each chip carrying its total. */
@@ -1334,7 +1334,8 @@ function itemRow(lots, key, storeContext) {
           (l.dateIn && l === oldest && sorted.length > 1 ? '<span class="badge badge-warm">use first</span>' : '') +
           (l.note ? '<span class="lot-date">' + esc(l.note) + '</span>' : '') +
           '<span class="spacer"></span>' +
-          '<button class="btn btn-ghost btn-compact" data-act="ask-take" data-id="' + esc(l.id) + '">Take out</button>' +
+          '<button class="btn btn-ghost btn-compact" data-act="ask-take" data-id="' + esc(l.id) + '" ' +
+            'aria-label="More about this bag">Details</button>' +
           '</div>';
       }).join('') +
       (S.editing
