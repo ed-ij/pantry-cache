@@ -631,9 +631,11 @@ function renderTopRight() {
       '<span class="badge badge-warm">Offline &mdash; cannot save</span>' +
       '<button class="btn btn-ghost btn-compact" data-act="refresh" title="Try again">&#8635;</button>';
   }
+  // Just the weight. "+3 more" was counting measures, not things, and read as
+  // three more of something — the unweighed tile on In store says it properly.
   return settingsButton() +
     '<span class="badge" title="' + esc(totals.join(' \u00b7 ')) + '">' +
-    esc(extra ? total + ' +' + (totals.length - 1) + ' more' : total + ' stored') + '</span>' +
+    esc(total) + '</span>' +
     '<button class="btn btn-ghost btn-compact" data-act="refresh" title="Reload from the spreadsheet">&#8635;</button>';
 }
 
@@ -1396,8 +1398,9 @@ function renderView() {
   var head = '<div class="stack">' +
     '<div class="summary">' +
       totalStat(inv) +
-      stat(String(inv.length), inv.length === 1 ? 'Bag / tub' : 'Bags / tubs') +
-      stat(String(Object.keys(kinds).length), 'Different things') +
+      unweighedStat(inv) +
+      stat(String(inv.length), inv.length === 1 ? 'Entry' : 'Entries',
+        Object.keys(kinds).length + (Object.keys(kinds).length === 1 ? ' different thing' : ' different things')) +
     '</div>' +
     storeFilter('') +
     searchBox('Search the stores\u2026');
@@ -1527,18 +1530,27 @@ function stat(num, label, sub) {
  * Leads with weight where there is any, and with the count where there is not,
  * so a shelf of unweighed artichokes does not report itself as "0 g".
  */
+/**
+ * The weight, on its own. It used to carry the count totals underneath —
+ * "18 cobs · 8 heads · +1 more" — which was the only place they appeared and so
+ * had to go somewhere, but under a kilogram figure they read as a qualification
+ * of it rather than as the separate measures constraint 7 says they are. They
+ * belong to the bags that were never weighed, and that is now a tile of its own.
+ */
 function totalStat(lots) {
-  var totals = lotsSize(lots, true);
-  var weighed = lots.some(function (l) { return l.weightG > 0; });
-  // Was: dropped to '' entirely at four or more measures, so with cobs,
-  // litres, blocks and boxes in store the summary showed the weight and
-  // silently omitted the rest. Constraint 7 says not to add them up; that is
-  // not a licence to hide them.
-  var rest = totals.slice(1);
-  var sub = rest.length <= 2
-    ? rest.join(' \u00b7 ')
-    : rest.slice(0, 2).join(' \u00b7 ') + ' \u00b7 +' + (rest.length - 2) + ' more';
-  return stat(totals[0], weighed ? 'Total weight' : 'Total', sub);
+  var w = sum(lots, function (l) { return l.weightG; });
+  return stat(w > 0 ? fmtWTotal(w) : '\u2014', 'Total weight', '');
+}
+
+/** The bags nothing was put on the scales for, and what is in them instead. */
+function unweighedStat(lots) {
+  var none = lots.filter(function (l) { return !(l.weightG > 0); });
+  var measures = none.length ? lotsSize(none) : [];
+  measures = measures.filter(function (s) { return s !== '\u2014'; });
+  var sub = measures.length <= 2
+    ? measures.join(' \u00b7 ')
+    : measures.slice(0, 2).join(' \u00b7 ') + ' \u00b7 +' + (measures.length - 2) + ' more';
+  return stat(String(none.length), none.length === 1 ? 'Unweighed' : 'Unweighed', sub);
 }
 
 function renderByItem(inv) {

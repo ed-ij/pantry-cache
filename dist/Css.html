@@ -932,7 +932,10 @@ button, input, select, textarea {
   border-radius: 8px;
   background: transparent;
   color: var(--ink-3);
-  font-size: .95rem;
+  /* The target was already a full tap size; the glyph inside it was not, so the
+     cog read as tiny however easy it was to hit. */
+  font-size: 1.45rem;
+  line-height: 1;
   cursor: pointer;
 }
 
@@ -1009,9 +1012,15 @@ button, input, select, textarea {
 
 /* ------------------------------------------------------------- summary bar */
 
+/* Three across on a tablet, which is what this is for. On a phone a third of
+   375 px is not enough for "22 different things" without it wrapping to three
+   lines, so the weight takes a row of its own and the two counts share the
+   next — auto-fit rather than a breakpoint, so it turns over when it needs to
+   rather than at a width guessed here. 8.5rem is 162 px at this app's 19 px
+   root, which is what lets two sit side by side inside a 375 px phone. */
 .summary {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
   gap: 10px;
 }
 
