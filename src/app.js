@@ -422,13 +422,23 @@ function done() {
  * custom property and the dark theme lightens it there — so whatever colour
  * gets typed into the spreadsheet stays legible either way.
  */
+/**
+ * The pair of custom properties every coloured thing carries: the stored colour,
+ * and the dark theme's version of it. CSS picks between them by theme, which
+ * means the choice still follows the system without JavaScript being told, and
+ * needs nothing newer than a custom property to do it.
+ */
+function fzVars(colour) {
+  return '--fz:' + esc(colour) + ';--fz-lift:' + esc(liftForDark(colour));
+}
+
 function dot(colour) {
-  return '<span class="dot" style="--fz:' + esc(colour) + '"></span>';
+  return '<span class="dot" style="' + fzVars(colour) + '"></span>';
 }
 
 /** The store's name, tinted with its own colour rather than a neutral pill. */
 function storeBadge(name) {
-  return '<span class="badge badge-store" style="--fz:' + esc(storeColour(name)) + '">' +
+  return '<span class="badge badge-store" style="' + fzVars(storeColour(name)) + '">' +
     dot(storeColour(name)) + esc(name) + '</span>';
 }
 
@@ -729,6 +739,71 @@ function nearestHueIndex(h) {
 var SATS = [35, 65, 95];
 var LUMS = [58, 43, 28];
 
+/* ---------------------------------------------------------------- oklab */
+
+/**
+ * The dark theme's version of a store's colour, worked out here rather than in
+ * CSS. It used to be `oklch(from … calc(l + 0.10) calc(c * 1.25) h)`, which is
+ * the clearest way to write it and needs Safari 16.4, Chrome 119 or Firefox 128
+ * — so every older browser fell through to a white mix, which is the washed-out
+ * result this transform exists to avoid. Doing the same arithmetic in JavaScript
+ * and handing CSS a plain hex works the same everywhere.
+ *
+ * Björn Ottosson's OKLab matrices. The round trip is exact enough that the
+ * output matches what a browser that does support oklch() computes for itself.
+ */
+function srgbToLinear(c) {
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+function linearToSrgb(c) {
+  return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+}
+
+function hexToOklab(hex) {
+  var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
+  if (!m) return null;
+  var r = srgbToLinear(parseInt(m[1], 16) / 255);
+  var g = srgbToLinear(parseInt(m[2], 16) / 255);
+  var b = srgbToLinear(parseInt(m[3], 16) / 255);
+
+  var l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  var mm = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  var s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+
+  return {
+    L: 0.2104542553 * l + 0.7936177850 * mm - 0.0040720468 * s,
+    a: 1.9779984951 * l - 2.4285922050 * mm + 0.4505937099 * s,
+    b: 0.0259040371 * l + 0.7827717662 * mm - 0.8086757660 * s,
+  };
+}
+
+function oklabToHex(o) {
+  var l = Math.pow(o.L + 0.3963377774 * o.a + 0.2158037573 * o.b, 3);
+  var m = Math.pow(o.L - 0.1055613458 * o.a - 0.0638541728 * o.b, 3);
+  var s = Math.pow(o.L - 0.0894841775 * o.a - 1.2914855480 * o.b, 3);
+
+  var rgb = [
+    linearToSrgb(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s),
+    linearToSrgb(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s),
+    linearToSrgb(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s),
+  ];
+
+  // Out-of-gamut components are clipped, which is what a browser does with an
+  // oklch() it cannot represent either.
+  return '#' + rgb.map(function (v) {
+    var n = Math.round(Math.min(1, Math.max(0, v)) * 255);
+    return ('0' + n.toString(16)).slice(-2);
+  }).join('');
+}
+
+/** Lighter, and a quarter more colourful, without touching the hue. */
+function liftForDark(hex) {
+  var o = hexToOklab(hex);
+  if (!o) return hex;
+  return oklabToHex({ L: o.L + 0.10, a: o.a * 1.25, b: o.b * 1.25 });
+}
+
 function hexToHsl(hex) {
   var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
   if (!m) return null;
@@ -790,7 +865,8 @@ function modalColour(m) {
     return SATS.map(function (s) {
       var on = m.sat === s && m.lum === l;
       return '<button class="cell' + (on ? ' is-on' : '') + '" ' +
-        'style="--s:' + s + ';--l:' + l + '" data-act="pick-cell" data-s="' + s + '" data-l="' + l + '" ' +
+        'style="' + fzVars(hslHex(m.hue, s, l)) + '" ' +
+        'data-act="pick-cell" data-s="' + s + '" data-l="' + l + '" ' +
         'aria-label="' + s + '% intensity, ' + l + '% brightness" ' +
         'aria-pressed="' + (on ? 'true' : 'false') + '"></button>';
     }).join('');
@@ -798,7 +874,7 @@ function modalColour(m) {
 
   return wrap(
     '<h2 class="modal-title">Choose a colour</h2>' +
-    '<div class="picker" style="--hue:' + m.hue + '">' +
+    '<div class="picker">' +
       '<input class="hue" type="range" min="0" max="' + (HUES.length - 1) + '" step="1" ' +
         'value="' + nearestHueIndex(m.hue) + '" data-act="pick-hue" aria-label="Hue" ' +
         'style="--stops:' + hueStops() + '">' +
@@ -822,7 +898,7 @@ function colourSwatches(current, act, extra) {
 
   var swatches = list.map(function (c) {
     var on = cur === c.toLowerCase();
-    return '<button class="swatch' + (on ? ' is-on' : '') + '" style="--fz:' + esc(c) + '" ' +
+    return '<button class="swatch' + (on ? ' is-on' : '') + '" style="' + fzVars(c) + '" ' +
       'data-act="' + act + '" data-colour="' + esc(c) + '" ' + extra + ' ' +
       'aria-label="Colour ' + esc(c) + '" aria-pressed="' + (on ? 'true' : 'false') + '"></button>';
   }).join('');
@@ -2676,8 +2752,14 @@ var ACTIONS = {
     var m = S.modal;
     m.hue = HUES[Number(el.value)] === undefined ? m.hue : HUES[Number(el.value)];
     m.value = hslHex(m.hue, m.sat, m.lum);
-    var box = document.querySelector('.picker');
-    if (box) box.style.setProperty('--hue', m.hue);
+    // Eighteen property writes, against destroying and rebuilding nine buttons
+    // under the finger that is dragging: the cells keep their nodes.
+    var cells = document.querySelectorAll('.cell');
+    for (var i = 0; i < cells.length; i++) {
+      var hex = hslHex(m.hue, Number(cells[i].dataset.s), Number(cells[i].dataset.l));
+      cells[i].style.setProperty('--fz', hex);
+      cells[i].style.setProperty('--fz-lift', liftForDark(hex));
+    }
     var prev = document.querySelector('.picker-preview');
     if (prev) prev.style.setProperty('--fz', m.value);
   },
