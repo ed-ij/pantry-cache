@@ -1,6 +1,6 @@
 {
-  "build": "2026-09-06T10:34:54Z",
-  "commit": "93a8a4b",
-  "notes": "Two reviews' worth of fixes: honest failure states, undo you can rely on, multi-select take-out, and a readable light theme.",
-  "published": "2026-09-06T10:35:00.157Z"
+  "build": "2026-09-06T17:29:58Z",
+  "commit": "2ff2c6b",
+  "notes": "Now Pantry Cache, and it works for anywhere you keep things. Set your places up from the app, move bags between them, rename or recolour them, and see a bag's weight to the gram.",
+  "published": "2026-09-06T17:30:04.491Z"
 }
