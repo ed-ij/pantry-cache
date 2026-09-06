@@ -120,3 +120,7 @@ chooses to.
 Each copy shows its build date at the bottom of **Open the app / get my link**,
 so a bug report can name a version.
 
+A copy made before this mechanism existed has no **Check for updates** item to
+choose. Bringing one up to date is a one-time manual pass, written out in
+[UPGRADING.md](UPGRADING.md).
+

@@ -250,6 +250,12 @@ All of these can be undone from the toast, same as everything else.
 
 ---
 
+## Keeping an existing copy up to date
+
+A copy that already has **Freezer Log → Check for updates** in its menu uses it.
+A copy made before that existed needs one manual pass first —
+[UPGRADING.md](UPGRADING.md).
+
 ## Giving it to someone else
 
 Each person gets their own copy, in their own Google account, with their own web
