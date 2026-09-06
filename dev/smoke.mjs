@@ -74,7 +74,8 @@ const DB = {
 const code = readFileSync(join(SRC, 'backend.js'), 'utf8');
 B = new Function('DB', `${code}
   return { TABLES, SUGGESTED_STORES, apiGetState, apiAdd, apiRemove, apiRemovePart, apiUndo,
-           apiEditLot, apiSplitLot, apiRenameItem, apiRenameCategory, apiSaveStores };`)(DB);
+           apiEditLot, apiSplitLot, apiRenameItem, apiRenameCategory, apiSaveStores,
+           apiDeleteItem };`)(DB);
 
 const stock = () => B.apiGetState().inventory;
 const keyish = (v) => String(v || '').trim().toLowerCase();
@@ -429,5 +430,52 @@ assert.equal(B.apiGetState().stores.length, 3, 'nothing was written by the refus
 B.apiSaveStores({ stores: [{ name: 'Porch', where: '', colour: 'red; }" onload="' }] });
 const porch = B.apiGetState().stores.filter((f) => f.name === 'Porch')[0];
 assert.match(porch.colour, /^#[0-9a-f]{6}$/i, 'a colour that is not a hex code never reaches the sheet');
+
+/* --- removing a catalogue entry, and refusing to while it holds stock --- */
+seedStores = true;
+fresh();
+B.apiAdd({ item: 'Rasberries', category: 'Fruit', store: 'Kitchen', weightG: 300, qty: 1, dateIn: '2026-08-01' });
+assert.throws(
+  () => B.apiDeleteItem({ name: 'Rasberries' }),
+  /still 1 bag[\s\S]*Take it out first/i,
+  'an item with stock is refused, and says what to do about it',
+);
+assert.equal(store.Items.filter((r) => r.Item === 'Rasberries').length, 1,
+  'the refused delete left the catalogue row alone');
+
+/* The case this exists for: a catalogue row with no bags and no history, which
+   until now could only be reached by opening the spreadsheet. */
+fresh();
+store.Items.push({ Item: 'Rasberries', Category: 'Fruit', 'Typical weight (g)': 300 });
+assert.equal(B.apiGetState().items.filter((i) => i.name === 'Rasberries').length, 1,
+  'a stray catalogue row is suggested by the type-ahead');
+
+const dropped = B.apiDeleteItem({ name: 'Rasberries' });
+assert.equal(store.Items.filter((r) => r.Item === 'Rasberries').length, 0, 'the row is gone');
+assert.equal(B.apiGetState().items.filter((i) => i.name === 'Rasberries').length, 0,
+  'and it stops being suggested');
+
+/* Constraint 3: everything is undoable, including this. */
+B.apiUndo(dropped.undo);
+assert.equal(store.Items.filter((r) => r.Item === 'Rasberries').length, 1,
+  'undo puts the catalogue row back');
+
+/* everStored is what the settings screen offers Remove on: a catalogue row
+   nothing has ever been kept under. Removing one that has been stored would
+   leave it suggested from History, so the control is withheld instead. */
+fresh();
+store.Items.push({ Item: 'Neverused', Category: 'Fruit' });
+B.apiAdd({ item: 'Damsons', category: 'Fruit', store: 'Kitchen', weightG: 400, qty: 1, dateIn: '2026-08-01' });
+const catalogue = B.apiGetState().items;
+assert.equal(catalogue.filter((i) => i.name === 'Neverused')[0].everStored, false,
+  'a catalogue row with no bags and no history has never been stored');
+assert.equal(catalogue.filter((i) => i.name === 'Damsons')[0].everStored, true,
+  'something with bags has been');
+
+assert.throws(
+  () => B.apiDeleteItem({ name: 'Never existed' }),
+  /no item called/i,
+  'removing something that is not there says so',
+);
 
 console.log('All backend checks passed.');

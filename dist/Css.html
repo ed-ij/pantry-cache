@@ -32,8 +32,12 @@
   --page: 940px;
 }
 
+/* Dark follows the system unless the reader has chosen otherwise in Settings.
+   The choice is stamped on <html> as data-theme, so it has to win in both
+   directions: forcing light while the system is dark, and forcing dark while
+   it is light. That is why these declarations appear twice. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0d151e;
     --surface: #17222e;
     --surface-2: #1c2837;
@@ -54,6 +58,28 @@
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .35);
     --shadow-lift: 0 2px 6px rgba(0, 0, 0, .4), 0 18px 44px rgba(0, 0, 0, .5);
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d151e;
+  --surface: #17222e;
+  --surface-2: #1c2837;
+  --surface-3: #243546;
+  --ink: #e9f0f7;
+  --ink-2: #a2b4c6;
+  --ink-3: #93a6b8;
+  --line: #2a3b4d;
+  --accent: #4f9df2;
+  --accent-ink: #07121d;
+  --accent-soft: #172f49;
+  --warm: #f08b4d;
+  --warm-ink: #1d1005;
+  --warm-soft: #3a2517;
+  --good: #4cbc8a;
+  --good-soft: #122e24;
+  --danger: #f0707a;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .35);
+  --shadow-lift: 0 2px 6px rgba(0, 0, 0, .4), 0 18px 44px rgba(0, 0, 0, .5);
 }
 
 * { box-sizing: border-box; }
@@ -399,18 +425,47 @@ button, input, select, textarea {
  * top of the file: same specificity, so the later one wins.
  */
 @media (prefers-color-scheme: dark) {
-  .dot {
+  :root:not([data-theme="light"]) .dot {
     background: color-mix(in oklab, var(--fz, var(--ink-3)) 66%, #ffffff);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
   }
-
+  
   /* The tint has to be mixed against the dark surface, not the light one, or
      a badge that reads as a faint wash on white reads as mud here. */
-  .badge-store {
+  :root:not([data-theme="light"]) .badge-store {
     background: color-mix(in oklab, var(--fz, var(--ink-3)) 22%, var(--surface-3));
     box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--fz, var(--ink-3)) 40%, transparent);
   }
+}
 
-  .dot { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18); }
+:root[data-theme="dark"] .dot {
+  background: color-mix(in oklab, var(--fz, var(--ink-3)) 66%, #ffffff);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
+}
+
+/* The tint has to be mixed against the dark surface, not the light one, or
+   a badge that reads as a faint wash on white reads as mud here. */
+:root[data-theme="dark"] .badge-store {
+  background: color-mix(in oklab, var(--fz, var(--ink-3)) 22%, var(--surface-3));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--fz, var(--ink-3)) 40%, transparent);
+}
+
+/* A settings row: label on the left, controls on the right, hairline between. */
+.row-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.row-line:first-of-type { border-top: 0; }
+
+/* The gear is a way out of settings, not a call to action: a filled accent
+   block beside the brand read as the most important thing on the screen. */
+.icon-btn.is-on {
+  background: var(--surface-3);
+  color: var(--ink);
 }
 
 /* --------------------------------------------------------------- stepper */

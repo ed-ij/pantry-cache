@@ -87,8 +87,8 @@ On the **Stores** tab, replace the two example rows with the actual stores:
 
 | Name | Where | Colour |
 | --- | --- | --- |
-| Kitchen | Fridge-store indoors | `#2f7fd0` |
-| Garage | Big chest store | `#2c8f68` |
+| Kitchen | Fridge-freezer indoors | `#2f7fd0` |
+| Garage | Big chest freezer | `#2c8f68` |
 | Utility | Upright by the back door | `#c0632a` |
 
 `Colour` is optional — leave it blank and one is chosen automatically. This is

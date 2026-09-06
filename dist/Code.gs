@@ -1,8 +1,8 @@
 /// Built by build.mjs from apps-script/host.js + src/backend.js — do not edit here.
 
 /** Stamped by build.mjs. Shown in the setup dialog and compared against latest.json. */
-const BUILD = '2026-09-06T11:08:50Z';
-const BUILD_COMMIT = 'dfd707f';
+const BUILD = '2026-09-06T11:45:14Z';
+const BUILD_COMMIT = '4449fb4';
 const BUILD_BRANCH = 'dev';
 const RELEASE_BASE = 'https://raw.githubusercontent.com/ed-ij/pantry-cache/dev/';
 
@@ -773,6 +773,11 @@ function apiGetState() {
       typicalCount: Math.round(num(r['Typical count'])) || 0,
       unit: txt(r.Unit),
       uses: 0,
+      // Whether anything has ever been kept under this name. Removing the
+      // catalogue row of something that has been stored is close to a no-op —
+      // the type-ahead reads History too, so it carries on suggesting it — and
+      // a control that appears to do nothing is worse than no control.
+      everStored: false,
     };
   });
   // How recently something was used, not only how often. `uses` counted every
@@ -798,9 +803,10 @@ function apiGetState() {
       items[k] = {
         name: lot.item, category: lot.category,
         typicalG: lot.weightG || 0, typicalCount: lot.count || 0,
-        unit: lot.unit, uses: 0,
+        unit: lot.unit, uses: 0, everStored: false,
       };
     }
+    items[k].everStored = true;
     // A unit typed straight into the sheet should still reach the form.
     if (!items[k].unit && lot.unit) items[k].unit = lot.unit;
     items[k].uses += score(lot, inStore);
@@ -1364,6 +1370,52 @@ function apiSaveStores(p) {
   });
 }
 
+/**
+ * Removes an item from the catalogue — the list the type-ahead suggests from —
+ * not any bags. Undoing an add already takes its Items row back out, but a
+ * catalogue entry that has outlived its stock had no way out of the app at all:
+ * the rename control lives inside an expanded item row, which needs bags to
+ * exist, so a typo with nothing under it could only be fixed in the sheet.
+ *
+ * Refuses while anything is still stored under the name. Deleting the catalogue
+ * entry would not remove those bags, it would only make the thing they are
+ * called unsuggestable — so the honest answer is to ask for the bags to go
+ * first, rather than to quietly do half of what was meant.
+ *
+ * Removes the catalogue row and the defaults it carries. An item that also
+ * appears in History stays suggestable, because the type-ahead reads both — and
+ * History is the permanent record, so it is not this call's to edit.
+ */
+function apiDeleteItem(p) {
+  const name = cleanName(p && p.name);
+  if (!name) throw new Error('Which item should be removed?');
+
+  return DB.lock(function () {
+    DB.ensure();
+
+    const held = DB.getAll('Inventory').filter(function (r) {
+      return keyOf(txt(r.Item)) === keyOf(name);
+    }).length;
+    if (held) {
+      throw new Error(
+        'There ' + (held === 1 ? 'is still 1 bag' : 'are still ' + held + ' bags') +
+        ' of ' + name + ' in a store. Take ' + (held === 1 ? 'it' : 'them') +
+        ' out first, then this can be removed.');
+    }
+
+    const row = DB.getAll('Items').filter(function (r) {
+      return keyOf(txt(r.Item)) === keyOf(name);
+    })[0];
+    if (!row) throw new Error('There is no item called ' + name + '.');
+
+    DB.deleteByIds('Items', [txt(row.Item)]);
+    return {
+      removed: txt(row.Item),
+      undo: issueUndo_({ type: 'delete-item', row: row }),
+    };
+  });
+}
+
 function apiRenameItem(p) {
   const from = cleanName(p && p.from);
   const to = cleanName(p && p.to);
@@ -1482,6 +1534,11 @@ function apiUndo(handle) {
     }
 
     // Already inside the lock, so the unlocked helpers are used directly.
+    if (token.type === 'delete-item') {
+      DB.append('Items', [token.row]);
+      return { undone: 'delete-item' };
+    }
+
     if (token.type === 'rename-item') {
       undoRenameItem_(token);
       return { ok: true };

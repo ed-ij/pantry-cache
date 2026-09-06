@@ -330,6 +330,15 @@ var S = {
   suggestedStores: [],
   storeColours: [],
 
+  // 'auto' follows the tablet. The other two override it, which is why the
+  // stylesheet carries each dark rule twice.
+  theme: 'auto',
+  // Off by default: browsing is the common case and rename pencils beside every
+  // heading are noise for it. On, the editing affordances appear and catalogue
+  // entries with nothing under them become visible so they can be tidied up.
+  editing: false,
+  version: null,
+
   modal: null,
   toast: null,
   busy: false,
@@ -340,6 +349,29 @@ var S = {
 
 var toastTimer = null;
 var lastToastHtml = '';
+
+/**
+ * Browser storage is per-artifact and can throw outright — a private window, or
+ * a browser set to block site data — so every read and write is guarded and the
+ * app renders correctly having found nothing.
+ */
+function readPref(key, fallback) {
+  try {
+    var v = window.localStorage.getItem(key);
+    return v === null ? fallback : v;
+  } catch (e) { return fallback; }
+}
+
+function writePref(key, value) {
+  try { window.localStorage.setItem(key, value); } catch (e) { /* nothing to do */ }
+}
+
+/** Stamps the choice on <html>, where the stylesheet's [data-theme] rules see it. */
+function applyTheme() {
+  var el = document.documentElement;
+  if (S.theme === 'auto') el.removeAttribute('data-theme');
+  else el.setAttribute('data-theme', S.theme);
+}
 
 function setState(patch) {
   Object.assign(S, patch);
@@ -418,7 +450,7 @@ function render() {
   var selStart = focusId && 'selectionStart' in active ? active.selectionStart : null;
 
   $('#topbar-right').innerHTML = renderTopRight();
-  $('#tabbar').innerHTML = isFirstRun() ? '' : renderTabs();
+  $('#tabbar').innerHTML = (isFirstRun() || S.tab === 'settings-place') ? '' : renderTabs();
   $('#panel').innerHTML = S.ready ? renderPanel() : renderLoading();
 
   // aria-live: rewriting this on every render — which means every keystroke in
@@ -510,6 +542,14 @@ function renderLoading() {
     '</div>';
 }
 
+function settingsButton() {
+  var on = S.tab === 'settings';
+  return '<button class="icon-btn' + (on ? ' is-on' : '') + '" data-act="' +
+    (on ? 'settings-close' : 'settings-open') + '" ' +
+    'aria-label="' + (on ? 'Close settings' : 'Settings') + '" ' +
+    'title="' + (on ? 'Close settings' : 'Settings') + '">&#9881;</button>';
+}
+
 function renderTopRight() {
   // lotsSize, not a bare weight sum: 42 cobs of sweetcorn with no weight were
   // reported as 0, while the stores view — using the same data — said "42
@@ -521,14 +561,17 @@ function renderTopRight() {
   // "0 g stored" beside a banner saying nothing could be read is exactly the
   // confident-and-wrong number the banner exists to avoid.
   if (S.loadFailed) {
-    return '<span class="badge badge-warm">Not loaded</span>' +
+    return settingsButton() +
+      '<span class="badge badge-warm">Not loaded</span>' +
       '<button class="btn btn-ghost btn-compact" data-act="refresh" title="Try again">&#8635;</button>';
   }
   if (S.offline) {
-    return '<span class="badge badge-warm">Offline &mdash; cannot save</span>' +
+    return settingsButton() +
+      '<span class="badge badge-warm">Offline &mdash; cannot save</span>' +
       '<button class="btn btn-ghost btn-compact" data-act="refresh" title="Try again">&#8635;</button>';
   }
-  return '<span class="badge" title="' + esc(totals.join(' \u00b7 ')) + '">' +
+  return settingsButton() +
+    '<span class="badge" title="' + esc(totals.join(' \u00b7 ')) + '">' +
     esc(extra ? total + ' +' + (totals.length - 1) + ' more' : total + ' stored') + '</span>' +
     '<button class="btn btn-ghost btn-compact" data-act="refresh" title="Reload from the spreadsheet">&#8635;</button>';
 }
@@ -574,7 +617,10 @@ function renderFirstRun() {
   var rows = firstRunDraft();
   var palette = S.storeColours.length ? S.storeColours : ['#5F8A20'];
 
+  // Both what is already saved and what is in the form: offering "Kitchen" to
+  // somebody who already has a Kitchen only leads to a duplicate-name refusal.
   var used = {};
+  S.stores.forEach(function (f) { used[f.name.trim().toLowerCase()] = true; });
   rows.forEach(function (r) { if (r.name) used[r.name.trim().toLowerCase()] = true; });
 
   var suggestions = S.suggestedStores
@@ -621,9 +667,12 @@ function renderFirstRun() {
 
   var named = rows.filter(function (r) { return r.name.trim(); }).length;
 
+  var adding = S.tab === 'settings-place';
+
   return '<div class="stack">' +
     '<div class="card">' +
-      '<div style="font-size:1.5rem;font-weight:800;letter-spacing:-.03em">Where do you keep things?</div>' +
+      '<div style="font-size:1.5rem;font-weight:800;letter-spacing:-.03em">' +
+        (adding ? 'Add a place' : 'Where do you keep things?') + '</div>' +
       '<p class="muted" style="margin-top:8px">' +
         'A freezer, a fridge, the pantry, a shelf in the shed &mdash; anywhere you want to keep ' +
         'track of. You can add more later, and change any of this in the spreadsheet whenever ' +
@@ -644,16 +693,131 @@ function renderFirstRun() {
       (S.busy ? 'Saving&hellip;' : named > 1 ? 'Save these ' + named + ' places' : 'Save this place') +
     '</button>' +
 
-    (S.sheetUrl
-      ? '<p class="muted small" style="text-align:center">or ' +
-        '<a href="' + esc(S.sheetUrl) + '" target="_blank" rel="noopener">set them up in the spreadsheet</a></p>'
-      : '') +
+    (adding
+      ? '<button class="btn btn-ghost" data-act="settings-open">Cancel</button>'
+      : S.sheetUrl
+        ? '<p class="muted small" style="text-align:center">or ' +
+          '<a href="' + esc(S.sheetUrl) + '" target="_blank" rel="noopener">set them up in the spreadsheet</a></p>'
+        : '') +
+  '</div>';
+}
+
+/* ------------------------------------------------------------- settings */
+
+function themeChoice(id, label) {
+  var on = S.theme === id;
+  return '<button class="chip' + (on ? ' is-on' : '') + '" data-act="set-theme" data-theme-id="' + id + '" ' +
+    'aria-pressed="' + (on ? 'true' : 'false') + '">' + label + '</button>';
+}
+
+/** Catalogue entries with nothing under them — the things editing mode is for. */
+function unstockedItems() {
+  var held = {};
+  S.inventory.forEach(function (l) { held[norm(l.item)] = 1; });
+  return S.items.filter(function (i) { return !held[norm(i.name)]; });
+}
+
+function renderSettings() {
+  var spare = unstockedItems();
+
+  var spareRows = spare.length
+    ? spare.map(function (i) {
+        return '<div class="row row-line">' +
+          '<div class="spacer">' + esc(i.name) +
+            '<span class="muted small"> &middot; ' + esc(i.category) + '</span></div>' +
+          '<button class="btn btn-ghost btn-compact" data-act="open-rename" data-scope="item" ' +
+            'data-from="' + esc(i.name) + '">Rename</button>' +
+          (i.everStored
+            ? '<span class="muted small" title="It has been stored before, so the ' +
+              'type-ahead will keep suggesting it whatever the item list says">kept</span>'
+            : '<button class="btn btn-ghost btn-compact" data-act="delete-item" ' +
+              'data-name="' + esc(i.name) + '">Remove</button>') +
+          '</div>';
+      }).join('')
+    : '<p class="muted small">Nothing to tidy up &mdash; every item in the list has bags under it.</p>';
+
+  var kept = spare.filter(function (i) { return i.everStored; }).length;
+
+  var v = S.version;
+
+  return '<div class="stack">' +
+
+    '<div class="card stack">' +
+      '<div class="card-title">How it looks</div>' +
+      '<div class="chips">' +
+        themeChoice('auto', 'Match the tablet') +
+        themeChoice('light', 'Light') +
+        themeChoice('dark', 'Dark') +
+      '</div>' +
+    '</div>' +
+
+    '<div class="card stack">' +
+      '<div class="row">' +
+        '<div class="spacer">' +
+          '<div class="card-title">Editing</div>' +
+          '<p class="muted small" style="margin:6px 0 0">Shows the rename controls, and lists ' +
+            'anything left in the item list with no bags under it.</p>' +
+        '</div>' +
+        '<button class="btn ' + (S.editing ? 'btn-warm' : 'btn-ghost') + ' btn-compact" ' +
+          'data-act="toggle-editing" aria-pressed="' + (S.editing ? 'true' : 'false') + '">' +
+          (S.editing ? 'On' : 'Off') + '</button>' +
+      '</div>' +
+      (S.editing
+        ? '<div class="stack" style="margin-top:6px">' +
+            '<div class="label">Items with nothing stored</div>' + spareRows +
+            (kept
+              ? '<p class="muted small" style="margin:0">Marked <b>kept</b> means it has been ' +
+                'stored before. Those stay in the suggestions whatever the item list says, ' +
+                'because that history is the record and is not this screen\'s to edit.</p>'
+              : '') +
+          '</div>'
+        : '') +
+    '</div>' +
+
+    '<div class="card stack">' +
+      '<div class="card-title">Places</div>' +
+      S.stores.map(function (f) {
+        return '<div class="row row-line">' + dot(f.colour) +
+          '<div class="spacer">' + esc(f.name) +
+            (f.where ? '<span class="muted small"> &middot; ' + esc(f.where) + '</span>' : '') +
+          '</div></div>';
+      }).join('') +
+      '<button class="btn btn-ghost" data-act="settings-add-place">Add a place</button>' +
+      '<p class="muted small" style="margin:0">Renaming or recolouring one is done in the ' +
+        'spreadsheet for now.</p>' +
+    '</div>' +
+
+    '<div class="card stack">' +
+      '<div class="card-title">This copy</div>' +
+      (v
+        ? '<div class="row row-line"><div class="spacer">Version</div>' +
+            '<span class="muted small">' + esc(v.build ? fmtDate(String(v.build).slice(0, 10)) : '\u2014') +
+            (v.commit ? ' &middot; ' + esc(v.commit) : '') + '</span></div>' +
+          (v.branch && v.branch !== 'main'
+            ? '<div class="muted small">Following <b>' + esc(v.branch) + '</b>, not a released build.</div>'
+            : '') +
+          (v.error
+            ? '<div class="muted small">' + esc(v.error) + '</div>'
+            : v.newer
+              ? '<div class="banner" style="display:block">A newer version is available' +
+                (v.notes ? ': ' + esc(v.notes) : '.') +
+                '<div class="muted small" style="margin-top:6px">Open the spreadsheet and choose ' +
+                '<b>Pantry Cache &rarr; Check for updates</b> to install it.</div></div>'
+              : '<div class="muted small">This is the newest published version.</div>')
+        : '<button class="btn btn-ghost" data-act="check-updates">' +
+          (S.busy ? 'Checking&hellip;' : 'Check for updates') + '</button>') +
+    '</div>' +
+
+    renderProblems() +
+    renderSheetLink() +
   '</div>';
 }
 
 function renderPanel() {
   if (S.loadFailed) return renderLoadFailed();
   if (isFirstRun()) return renderFirstRun();
+  if (S.tab === 'settings') return renderSettings();
+  if (S.tab === 'settings-place') return renderFirstRun();
   if (S.tab === 'add') return renderAdd();
   if (S.tab === 'view') return renderView();
   return renderTake();
@@ -997,7 +1161,6 @@ function renderView() {
   inv.forEach(function (l) { kinds[norm(l.item)] = 1; });
 
   var head = '<div class="stack">' +
-    renderProblems() +
     '<div class="summary">' +
       totalStat(inv) +
       stat(String(inv.length), inv.length === 1 ? 'Bag / tub' : 'Bags / tubs') +
@@ -1134,8 +1297,10 @@ function renderByItem(inv) {
       ' <span class="group-meta">' + (size === '—' ? '' : esc(size) + ' &middot; ') +
       lots.length + (lots.length === 1 ? ' bag' : ' bags') + '</span>' +
       '<span class="spacer"></span>' +
-      '<button class="icon-btn" data-act="open-rename" data-scope="category" data-from="' + esc(cat) + '" ' +
-      'aria-label="Rename ' + esc(cat) + '" title="Rename ' + esc(cat) + '">&#9998;</button>' +
+      (S.editing
+        ? '<button class="icon-btn" data-act="open-rename" data-scope="category" data-from="' + esc(cat) + '" ' +
+          'aria-label="Rename ' + esc(cat) + '" title="Rename ' + esc(cat) + '">&#9998;</button>'
+        : '') +
       '</div>' + rows;
   }).join('');
 
@@ -1173,11 +1338,13 @@ function itemRow(lots, key, storeContext) {
           '<button class="btn btn-ghost btn-compact" data-act="ask-take" data-id="' + esc(l.id) + '">Take out</button>' +
           '</div>';
       }).join('') +
-      '<div class="lots-foot">' +
-        '<button class="btn btn-ghost btn-compact" style="padding-left:0" ' +
-        'data-act="open-rename" data-scope="item" data-from="' + esc(lots[0].item) + '">' +
-        '&#9998; Rename &ldquo;' + esc(lots[0].item) + '&rdquo;</button>' +
-      '</div></div>'
+      (S.editing
+        ? '<div class="lots-foot">' +
+          '<button class="btn btn-ghost btn-compact" style="padding-left:0" ' +
+          'data-act="open-rename" data-scope="item" data-from="' + esc(lots[0].item) + '">' +
+          '&#9998; Rename &ldquo;' + esc(lots[0].item) + '&rdquo;</button>' +
+        '</div>'
+        : '') + '</div>'
     : '';
 
   return '<button class="row-btn" data-act="toggle-open" data-key="' + esc(key) + '">' +
@@ -2072,14 +2239,46 @@ var ACTIONS = {
   'open-rename': function (d) {
     setState({ modal: { kind: 'rename', scope: d.scope, from: d.from, value: d.from } });
   },
+  'settings-open': function () {
+    // Remembered, so closing settings returns to the tab you were reading.
+    settingsCameFrom = S.tab === 'settings' ? settingsCameFrom : S.tab;
+    setState({ tab: 'settings', modal: null });
+    window.scrollTo(0, 0);
+  },
+  'settings-close': function () {
+    setState({ tab: settingsCameFrom || 'view', modal: null });
+    window.scrollTo(0, 0);
+  },
+  'set-theme': function (d) {
+    S.theme = d.themeId;
+    writePref('theme', d.themeId);
+    applyTheme();
+    setState({});
+  },
+  'toggle-editing': function () {
+    setState({ editing: !S.editing });
+  },
+  'settings-add-place': function () {
+    // The first-run screen is the add form; sending them to it with the tab
+    // bar still available means it is a detour rather than a mode.
+    S.newStores = [{ name: '', where: '', colour: '' }];
+    setState({ tab: 'settings-place' });
+    window.scrollTo(0, 0);
+  },
+  'check-updates': function () { doCheckUpdates(); },
+  'delete-item': function (d) { doDeleteItem(d.name); },
+
+  // Both re-render, because the Save button's enabled state is derived from
+  // these values — skipping the render left it disabled however much you typed.
+  // render() puts focus and the caret back by element id, which is why these
+  // inputs carry stable ones.
   'store-name': function (d, el) {
     firstRunDraft()[Number(d.row)].name = el.value;
-    // Deliberately not re-rendering: this fires on every keystroke and a
-    // re-render would take the caret with it. The value is read back on save,
-    // and the only thing that lags is whether the Save button is enabled.
+    setState({});
   },
   'store-where': function (d, el) {
     firstRunDraft()[Number(d.row)].where = el.value;
+    setState({});
   },
   'store-colour': function (d) {
     firstRunDraft()[Number(d.row)].colour = d.colour;
@@ -2254,11 +2453,12 @@ function doSplit(id, into) {
 }
 
 /**
- * Reads the values straight off the inputs rather than trusting the draft: the
- * keystroke handlers deliberately do not re-render, so a name typed and saved
- * without leaving the field is in the DOM before it is in state.
+ * Reads the values off the inputs as well as the draft. They are kept in step
+ * on every keystroke, but a value restored by the browser — autofill, or a
+ * back-navigation — reaches the DOM without firing an input event.
  */
 function doSaveStores() {
+  var cameFromSettings = S.tab === 'settings-place';
   var rows = firstRunDraft().map(function (row, i) {
     var name = $('#store-name-' + i);
     var where = $('#store-where-' + i);
@@ -2278,8 +2478,34 @@ function doSaveStores() {
     return load(false).then(function () {
       // Landing on Put in is the point: they came here to record something, and
       // naming the places was the obstacle, not the errand.
-      setState({ tab: 'add' });
+      setState({ tab: cameFromSettings ? 'settings' : 'add' });
       toast(rows.length > 1 ? rows.length + ' places saved.' : rows[0].name + ' saved.');
+    });
+  }).catch(function (e) {
+    S.busy = false;
+    fail(e);
+  });
+}
+
+function doCheckUpdates() {
+  setState({ busy: true });
+  api('apiUpdateStatus').then(function (v) {
+    done();
+    setState({ version: v });
+  }).catch(function () {
+    S.busy = false;
+    // Not fail(): a version check that cannot run is worth saying plainly in
+    // place, rather than as a red toast over whatever else is on screen.
+    setState({ version: { error: 'Could not check just now. The spreadsheet menu can also tell you.' } });
+  });
+}
+
+function doDeleteItem(name) {
+  setState({ busy: true });
+  api('apiDeleteItem', { name: name }).then(function (res) {
+    done();
+    return load(false).then(function () {
+      toast('Removed ' + res.removed + ' from the item list.', res.undo);
     });
   }).catch(function (e) {
     S.busy = false;
@@ -2377,7 +2603,7 @@ function load(showToast) {
  * rather than a side effect of the modal closing.
  */
 function writesToSheet(act) {
-  return /^(do-|save-|undo-)/.test(act) || act === 'refresh';
+  return /^(do-|save-|undo-|delete-)/.test(act) || act === 'refresh';
 }
 
 /**
@@ -2456,6 +2682,13 @@ window.addEventListener('online', function () {
 document.addEventListener('visibilitychange', function () {
   if (document.visibilityState === 'visible' && dayRolled()) load(false);
 });
+
+var settingsCameFrom = 'view';
+
+// Before the first paint, so a chosen theme does not flash the other one.
+S.theme = readPref('theme', 'auto');
+if (S.theme !== 'light' && S.theme !== 'dark') S.theme = 'auto';
+applyTheme();
 
 render();
 load(false);

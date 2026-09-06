@@ -109,7 +109,8 @@ function loadBackend() {
   const code = readFileSync(join(SRC, 'backend.js'), 'utf8');
   const factory = new Function('DB', `${code}
     return { TABLES, DATE_COLUMNS, SUGGESTED_STORES, apiGetState, apiAdd, apiRemove, apiRemovePart, apiUndo,
-             apiEditLot, apiSplitLot, apiRenameItem, apiRenameCategory, apiSaveStores };`);
+             apiEditLot, apiSplitLot, apiRenameItem, apiRenameCategory, apiSaveStores,
+             apiDeleteItem };`);
   return factory(DB);
 }
 
@@ -144,6 +145,16 @@ const server = createServer(async (req, res) => {
     const arg = await readBody(req);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     try {
+      // Lives in apps-script/host.js, not backend.js, so the dev server has to
+      // stand in for it — otherwise the settings screen's version card can only
+      // be seen on a deployed copy.
+      if (fn === 'apiUpdateStatus') {
+        res.end(JSON.stringify({ result: {
+          build: '2026-09-06T11:00:00Z', commit: 'dev0000', branch: 'dev',
+          latest: '2026-09-06T11:00:00Z', notes: '', newer: false,
+        } }));
+        return;
+      }
       if (typeof B[fn] !== 'function') throw new Error(`No such API: ${fn}`);
       const result = B[fn](arg);
       await saveStore();

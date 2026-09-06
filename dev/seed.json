@@ -2,12 +2,12 @@
   "Stores": [
     {
       "Name": "Kitchen",
-      "Where": "Fridge-store, top drawer",
+      "Where": "Fridge-freezer, top drawer",
       "Colour": "#2f7fd0"
     },
     {
       "Name": "Garage",
-      "Where": "Big chest store",
+      "Where": "Big chest freezer",
       "Colour": "#2c8f68"
     },
     {
