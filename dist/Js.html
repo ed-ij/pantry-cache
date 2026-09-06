@@ -692,15 +692,6 @@ function hslHex(h, s, l) {
   return '#' + f(0) + f(8) + f(4);
 }
 
-function paletteColours() {
-  var hues = [6, 28, 44, 64, 96, 148, 172, 194, 212, 244, 280, 320];
-  var out = [];
-  [44, 32].forEach(function (l) {
-    hues.forEach(function (h) { out.push(hslHex(h, 62, l)); });
-  });
-  return out;
-}
-
 /**
  * Hue, and the two axes of the grid. Nothing outside these ranges is offered:
  * saturation never falls low enough to reach grey, and lightness never climbs
@@ -1190,13 +1181,6 @@ function renderAddSearch(q) {
   return '<div class="tile-grid">' + newTile + matches.map(itemTile).join('') + '</div>';
 }
 
-function countStores(lots) {
-  var names = {};
-  lots.forEach(function (l) { names[l.store] = 1; });
-  var list = Object.keys(names);
-  return list.length === 1 ? list[0] : list.length + ' stores';
-}
-
 function renderAddDetails() {
   var d = S.draft;
   var sized = (d.weightG > 0 && d.weightConfirmed) || (d.showCount && d.count > 0);
@@ -1396,8 +1380,10 @@ function renderView() {
   var head = '<div class="stack">' +
     '<div class="summary">' +
       totalStat(inv) +
-      unweighedStat(inv) +
+      // Entries before unweighed entries: the second qualifies the first, and a
+      // subset reads oddly ahead of the set it is part of.
       stat(String(inv.length), inv.length === 1 ? 'Entry' : 'Entries') +
+      unweighedStat(inv) +
     '</div>' +
     storeFilter('') +
     searchBox('Search the stores\u2026');
