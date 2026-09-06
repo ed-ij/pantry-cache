@@ -1392,15 +1392,11 @@ function renderView() {
   var inv = filtered();
   var q = norm(S.search);
 
-  var kinds = {};
-  inv.forEach(function (l) { kinds[norm(l.item)] = 1; });
-
   var head = '<div class="stack">' +
     '<div class="summary">' +
       totalStat(inv) +
       unweighedStat(inv) +
-      stat(String(inv.length), inv.length === 1 ? 'Entry' : 'Entries',
-        Object.keys(kinds).length + (Object.keys(kinds).length === 1 ? ' different thing' : ' different things')) +
+      stat(String(inv.length), inv.length === 1 ? 'Entry' : 'Entries') +
     '</div>' +
     storeFilter('') +
     searchBox('Search the stores\u2026');
@@ -1542,15 +1538,16 @@ function totalStat(lots) {
   return stat(w > 0 ? fmtWTotal(w) : '\u2014', 'Total weight', '');
 }
 
-/** The bags nothing was put on the scales for, and what is in them instead. */
+/**
+ * How many entries have no weight on them — deliberately entries and not the
+ * things inside them. Adding those up means six cobs plus four heads, which
+ * constraint 7 says is not ten of anything, so there is no honest single number
+ * for it. Counting the rows is a real number, and saying "entries" beside a
+ * tile that counts all of them makes plain that it is two of the seventy-nine.
+ */
 function unweighedStat(lots) {
-  var none = lots.filter(function (l) { return !(l.weightG > 0); });
-  var measures = none.length ? lotsSize(none) : [];
-  measures = measures.filter(function (s) { return s !== '\u2014'; });
-  var sub = measures.length <= 2
-    ? measures.join(' \u00b7 ')
-    : measures.slice(0, 2).join(' \u00b7 ') + ' \u00b7 +' + (measures.length - 2) + ' more';
-  return stat(String(none.length), none.length === 1 ? 'Unweighed' : 'Unweighed', sub);
+  var none = lots.filter(function (l) { return !(l.weightG > 0); }).length;
+  return stat(String(none), 'Unweighed entries', '');
 }
 
 function renderByItem(inv) {
