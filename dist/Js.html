@@ -1335,8 +1335,8 @@ function itemRow(lots, key, storeContext) {
           (l.dateIn && l === oldest && sorted.length > 1 ? '<span class="badge badge-warm">use first</span>' : '') +
           (l.note ? '<span class="lot-date">' + esc(l.note) + '</span>' : '') +
           '<span class="spacer"></span>' +
-          '<button class="btn btn-ghost btn-compact" data-act="ask-take" data-id="' + esc(l.id) + '" ' +
-            'aria-label="More about this bag">Details</button>' +
+          '<button class="row-more" data-act="ask-take" data-id="' + esc(l.id) + '" ' +
+            'aria-label="More about this bag">&rsaquo;</button>' +
           '</div>';
       }).join('') +
       (S.editing
@@ -1659,27 +1659,30 @@ function modalTake(m) {
     '<p class="muted" style="margin-top:0">' + esc(lotSize(l)) + ' in the ' + esc(l.store) + ' store' +
       (l.dateIn ? ' &middot; put in ' + esc(fmtWhen(l)) + ' (' + esc(ageText(l.dateIn)) + ')' : ' &middot; date not recorded') +
       (l.note ? ' &middot; ' + esc(l.note) : '') + '</p>' +
-    // Four peers, one weight between them. Changing and splitting a bag can be
-    // reached from nowhere else, while taking one out has a tab of its own where
-    // several go at once — so they lead, and nothing here is dressed as the
-    // thing you came to do. A warm hero on "Take all" also meant arriving from
-    // In store's Details, or from Take out's chevron, and being shown removal as
-    // the answer to a question that was not asked.
+    // The same bag, asked about from two different questions. On Take out the
+    // question is "how much of this is going", so removal leads and editing is
+    // not offered at all. On In store it is "what have I got", so changing the
+    // bag leads and only the whole-bag removal comes with it.
+    //
+    // Split appears in neither: the Change dialog already offers it, and a peer
+    // that only duplicates what the button above it opens is clutter with a
+    // second name.
     '<div class="stack" style="margin-top:18px">' +
-      '<button class="btn btn-block" data-act="open-edit" data-id="' + esc(l.id) + '">' +
-        '&#9998; Change this bag</button>' +
-      '<button class="btn btn-block" data-act="open-split" data-id="' + esc(l.id) + '">' +
-        'Split it into several&hellip;</button>' +
-      '<button class="btn btn-block" data-act="do-take" data-id="' + esc(l.id) + '">' +
-        'Take all ' + esc(lotSize(l)) + ' out</button>' +
-      (splittable
-        ? '<button class="btn btn-block" data-act="open-part" data-id="' + esc(l.id) + '">' +
-          (l.count > 1 ? 'Take only some of them' : 'Take only part of it') + '</button>'
-        : '') +
-      (l.count === 1 && !l.weightG
-        ? '<div class="muted small" style="margin-top:-4px">Taking part of it needs a weight ' +
-          '&mdash; add one under &ldquo;Change this bag&rdquo;.</div>'
-        : '') +
+      (S.tab === 'take'
+        ? '<button class="btn btn-warm btn-hero btn-block" data-act="do-take" data-id="' + esc(l.id) + '">' +
+            'Take all ' + esc(lotSize(l)) + ' out</button>' +
+          (splittable
+            ? '<button class="btn btn-block" data-act="open-part" data-id="' + esc(l.id) + '">' +
+              (l.count > 1 ? 'Take only some of them' : 'Take only part of it') + '</button>'
+            : '') +
+          (l.count === 1 && !l.weightG
+            ? '<div class="muted small" style="margin-top:-4px">Taking part of it needs a weight ' +
+              '&mdash; add one under &ldquo;Change this bag&rdquo;, on the In store tab.</div>'
+            : '')
+        : '<button class="btn btn-block" data-act="open-edit" data-id="' + esc(l.id) + '">' +
+            '&#9998; Change this bag</button>' +
+          '<button class="btn btn-block" data-act="do-take" data-id="' + esc(l.id) + '">' +
+            'Take all ' + esc(lotSize(l)) + ' out</button>') +
       '<button class="btn btn-ghost btn-block" data-act="close-modal">Cancel</button>' +
     '</div>'
   );
