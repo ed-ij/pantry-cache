@@ -365,3 +365,22 @@ sheet, so behaviour matches the deployed app. `dev/data.json` starts as a copy o
 | `build.mjs` | Wraps the above into the file layout Apps Script requires. |
 
 Edit the sources, never `dist/` — it is regenerated from scratch on every build.
+
+### Checks at commit time
+
+`tools/setup-mac.sh` points git at the hooks in the repository:
+
+```bash
+git config core.hooksPath tools/hooks
+```
+
+They are tracked rather than per-machine, so a new laptop gets them with the
+clone. Each one asks about something that has actually gone wrong here — real
+rows in a commit, a `dist/` left behind `src/`, a build stamped with the wrong
+branch, a release `latest.json` never names — and `npm test` besides, which is
+a fifth of a second. There is no formatting or lint check: a hook that cries
+wolf gets `--no-verify`, and takes the useful checks with it.
+
+The last two questions are asked again in `pre-push`, because a release here is
+a fast-forward of `main` and a fast-forward creates no commit for `pre-commit`
+to run on. `--no-verify` skips either, for when you mean it.

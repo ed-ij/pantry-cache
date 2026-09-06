@@ -292,7 +292,29 @@ else
   fi
 fi
 
-# --- 8. prove it works ------------------------------------------------------
+# --- 8. commit checks -------------------------------------------------------
+
+say "Commit checks"
+if [ -n "$CHECK_ONLY" ]; then
+  HOOKS="$( cd "$REPO_ROOT" && git config core.hooksPath || true )"
+  if [ "$HOOKS" = "tools/hooks" ]; then
+    ok "core.hooksPath = tools/hooks"
+  else
+    warn "commit checks are not installed"
+    info "run this script without --check to point git at tools/hooks"
+  fi
+elif [ -d "$REPO_ROOT/tools/hooks" ]; then
+  # Hooks under .git/ are per-machine and untracked, so they are exactly the
+  # thing a move to a new laptop loses. core.hooksPath points git at the ones
+  # in the repository instead; see tools/hooks/pre-commit for what they ask.
+  ( cd "$REPO_ROOT" && git config core.hooksPath tools/hooks )
+  chmod +x "$REPO_ROOT"/tools/hooks/* 2>/dev/null || true
+  ok "core.hooksPath = tools/hooks"
+else
+  warn "tools/hooks not found — skipped"
+fi
+
+# --- 9. prove it works ------------------------------------------------------
 
 say "Project dependencies"
 ok "none — every script imports only node: builtins, so there is no npm install"
@@ -312,8 +334,11 @@ say "Checking the toolchain against the project"
 cd "$REPO_ROOT"
 
 info "npm run build"
-if npm run build >/tmp/freezer-setup-build.log 2>&1; then
-  ok "build wrote dist/"
+# Into a scratch directory, not dist/: this is proving the toolchain works, and
+# a build stamps itself with the time and commit, so building in place would
+# leave a fresh checkout dirty before anybody had touched it.
+if PANTRY_DIST="$(mktemp -d)/dist" npm run build >/tmp/freezer-setup-build.log 2>&1; then
+  ok "build ran clean"
 else
   tail -20 /tmp/freezer-setup-build.log >&2
   die "build failed — output above, full log in /tmp/freezer-setup-build.log"
@@ -327,7 +352,7 @@ else
   die "tests failed — output above, full log in /tmp/freezer-setup-test.log"
 fi
 
-# --- 9. what next -----------------------------------------------------------
+# --- 10. what next -----------------------------------------------------------
 
 say "Ready"
 cat <<'NEXT'
