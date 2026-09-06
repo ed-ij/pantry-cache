@@ -646,13 +646,13 @@ function paletteColours() {
  * to white or drops to black. The colour is painted as a dot and mixed into a
  * badge behind text, so those are not choices, they are ways to look broken.
  *
- * The floors were found by looking rather than reasoned: below about 32%
- * saturation the dark theme's white mix takes the hue out of it and the left of
- * the grid goes grey, which is exactly what these bounds exist to prevent.
+ * The bounds were found by looking rather than reasoned, and they widened once
+ * the dark theme stopped mixing store colours with white: chroma survives now,
+ * so a low-saturation choice stays a colour there instead of going grey.
  */
 var HUE_STEPS = 360;
-var SATS = [38, 52, 66, 80, 94];
-var LUMS = [62, 51, 40, 29];
+var SATS = [32, 48, 64, 80, 94];
+var LUMS = [64, 52, 40, 28];
 
 function hexToHsl(hex) {
   var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
