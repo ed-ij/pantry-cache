@@ -176,6 +176,21 @@ function fmtMonth(iso) {
   return parseISO(iso).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
 }
 
+/**
+ * What a row in a list says about when a bag went in: one of the two, never
+ * both, and always to the month.
+ *
+ * Both together — "10 Sept 2025 · 11 months ago" — is three facts in a row that
+ * also has to carry a weight, a place and sometimes a note, and the day is the
+ * least useful of them. Constraint 5 says the month is what matters for produce;
+ * the day is still recorded, still in the sheet, and still shown in the details
+ * behind the chevron, which is where somebody has asked for it.
+ */
+function whenText(lot) {
+  if (!lot || !lot.dateIn) return 'date not recorded';
+  return S.dateStyle === 'age' ? ageText(lot.dateIn) : fmtMonth(lot.dateIn);
+}
+
 function ageText(iso) {
   if (!iso) return '';
   var days = Math.round((parseISO(S.today) - parseISO(iso)) / 86400000);
@@ -362,6 +377,8 @@ var S = {
   // 'auto' follows the tablet. The other two override it, which is why the
   // stylesheet carries each dark rule twice.
   theme: 'auto',
+  // 'date' or 'age' — what a list row says about when a bag went in.
+  dateStyle: 'date',
   // Off by default: browsing is the common case and rename pencils beside every
   // heading are noise for it. On, the editing affordances appear and catalogue
   // entries with nothing under them become visible so they can be tidied up.
@@ -1011,6 +1028,12 @@ function themeChoice(id, label) {
     'aria-pressed="' + (on ? 'true' : 'false') + '">' + label + '</button>';
 }
 
+function dateChoice(id, label) {
+  var on = S.dateStyle === id;
+  return '<button class="chip' + (on ? ' is-on' : '') + '" data-act="set-date-style" data-style="' + id + '" ' +
+    'aria-pressed="' + (on ? 'true' : 'false') + '">' + label + '</button>';
+}
+
 /** Catalogue entries with nothing under them — the things editing mode is for. */
 function unstockedItems() {
   var held = {};
@@ -1049,6 +1072,15 @@ function renderSettings() {
         themeChoice('auto', 'Match the tablet') +
         themeChoice('light', 'Light') +
         themeChoice('dark', 'Dark') +
+      '</div>' +
+      '<div style="margin-top:6px">' +
+        '<span class="label">Dates in the lists</span>' +
+        '<div class="chips">' +
+          dateChoice('date', 'When it went in') +
+          dateChoice('age', 'How long ago') +
+        '</div>' +
+        '<p class="muted small" style="margin:8px 0 0">Either way the lists show the month. ' +
+          'The exact day is on the bag itself, behind the arrow.</p>' +
       '</div>' +
     '</div>' +
 
@@ -1672,7 +1704,7 @@ function itemRow(lots, key, storeContext) {
             : '') +
           '<span class="lot-weight">' + esc(lotSize(l)) + '</span>' +
           '<span class="lot-date">' +
-            (l.dateIn ? esc(fmtWhen(l)) + ' &middot; ' + esc(ageText(l.dateIn)) : 'date not recorded') +
+            esc(whenText(l)) +
           '</span>' +
           (storeContext ? '' : storeBadge(l.store)) +
           (l.dateIn && l === oldest && sorted.length > 1 ? '<span class="badge badge-warm">use first</span>' : '') +
@@ -1732,7 +1764,7 @@ function renderTake() {
       lastMonth = month;
       headHtml = '<div class="group-head">' +
         (l.dateIn
-          ? esc(fmtMonth(l.dateIn)) + ' <span class="group-meta">' + esc(ageText(l.dateIn)) + '</span>'
+          ? esc(whenText(l))
           : 'No date recorded <span class="group-meta">fix these in the spreadsheet</span>') +
         '</div>';
     }
@@ -1747,8 +1779,11 @@ function renderTake() {
           '<span class="row-main">' +
             '<span class="row-name">' + esc(l.item) +
               (first ? ' <span class="badge badge-warm">use first</span>' : '') + '</span>' +
-            '<span class="row-meta">' + storeBadge(l.store) + ' ' +
-            (l.dateIn ? 'put in ' + esc(fmtWhen(l)) + ' &middot; ' + esc(ageText(l.dateIn)) : 'date not recorded') +
+            // No date here: this list is grouped by it, so the heading above
+            // has just said it, and saying it again on every row is the clutter
+            // the month rounding was meant to clear.
+            '<span class="row-meta">' + storeBadge(l.store) +
+            (l.dateIn ? '' : ' date not recorded') +
             (l.note ? ' &middot; ' + esc(l.note) : '') + '</span>' +
           '</span>' +
           '<span class="row-right"><span class="row-strong">' + esc(lotSize(l)) + '</span></span>' +
@@ -2728,6 +2763,11 @@ var ACTIONS = {
     applyTheme();
     setState({});
   },
+  'set-date-style': function (d) {
+    S.dateStyle = d.style;
+    writePref('dateStyle', d.style);
+    setState({});
+  },
   'toggle-editing': function () {
     // Ticks are invisible with editing off, and acting on an invisible
     // selection later would be a surprise.
@@ -3296,6 +3336,7 @@ var settingsCameFrom = 'view';
 // Before the first paint, so a chosen theme does not flash the other one.
 S.theme = readPref('theme', 'auto');
 if (S.theme !== 'light' && S.theme !== 'dark') S.theme = 'auto';
+S.dateStyle = readPref('dateStyle', 'date') === 'age' ? 'age' : 'date';
 applyTheme();
 
 render();

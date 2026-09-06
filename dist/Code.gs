@@ -1,8 +1,8 @@
 /// Built by build.mjs from apps-script/host.js + src/backend.js — do not edit here.
 
 /** Stamped by build.mjs. Shown in the setup dialog and compared against latest.json. */
-const BUILD = '2026-09-06T18:01:31Z';
-const BUILD_COMMIT = '6b6ad8c';
+const BUILD = '2026-09-06T18:07:42Z';
+const BUILD_COMMIT = '3b16e15';
 const BUILD_BRANCH = 'dev';
 const RELEASE_BASE = 'https://raw.githubusercontent.com/ed-ij/pantry-cache/dev/';
 
