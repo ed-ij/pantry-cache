@@ -694,13 +694,26 @@ function hexToHsl(hex) {
 
 /** The nearest offered saturation and lightness, so an existing colour lands
  *  on a real cell rather than showing nothing selected. */
-/** Hard-edged bands, one per offered hue, so the slider shows its own steps. */
+/**
+ * Hard-edged bands, one per offered hue, so the slider shows its own steps.
+ *
+ * Each band is centred on where the thumb actually comes to rest, which is not
+ * where an even division of the track would put it: the thumb does not overhang
+ * the ends, so its centre travels between one radius in and one radius short,
+ * not from 0% to 100%. Twenty equal slices drifted against that by half a band
+ * at each end, and the marker sat off its own colour.
+ */
 function hueStops() {
   var n = HUES.length;
+  var r = '1.1rem';                        // half the thumb, from .hue's CSS
+  var at = function (x) {
+    return 'calc(' + r + ' + (100% - 2 * ' + r + ') * ' + (x / (n - 1)).toFixed(5) + ')';
+  };
   return HUES.map(function (h, i) {
-    var a = (i / n * 100).toFixed(2) + '%';
-    var b = ((i + 1) / n * 100).toFixed(2) + '%';
-    return 'hsl(' + h + ' 70% 45%) ' + a + ', hsl(' + h + ' 70% 45%) ' + b;
+    var c = 'hsl(' + h + ' 70% 45%)';
+    var from = i === 0 ? '0%' : at(i - 0.5);
+    var to = i === n - 1 ? '100%' : at(i + 0.5);
+    return c + ' ' + from + ', ' + c + ' ' + to;
   }).join(', ');
 }
 

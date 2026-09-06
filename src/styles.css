@@ -545,14 +545,17 @@ button, input, select, textarea {
   cursor: pointer;
 }
 
-/* A thumb wide enough to find with a thumb. */
+/* A thumb wide enough to find with a thumb, and open in the middle: a solid one
+   covered the very colour it was pointing at, which also made it impossible to
+   see whether it was sitting on the right band. */
 .hue::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 2.2rem;
   height: 2.2rem;
   border-radius: 999px;
-  background: var(--surface);
-  border: 3px solid var(--ink);
+  background: transparent;
+  border: 4px solid var(--ink);
+  box-shadow: 0 0 0 2px var(--surface);
   cursor: grab;
 }
 
@@ -560,8 +563,9 @@ button, input, select, textarea {
   width: 2.2rem;
   height: 2.2rem;
   border-radius: 999px;
-  background: var(--surface);
-  border: 3px solid var(--ink);
+  background: transparent;
+  border: 4px solid var(--ink);
+  box-shadow: 0 0 0 2px var(--surface);
   cursor: grab;
 }
 
