@@ -489,29 +489,76 @@ button, input, select, textarea {
   color: var(--accent);
 }
 
-/* The picker grid. auto-fill rather than a fixed column count, so it uses the
-   width it is given without ever shrinking a target below the tap size. */
-.swatch-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--tap), 1fr));
-  gap: 10px;
-  justify-items: center;
-}
+/* The picker. Every cell takes its hue from --hue on this container, so moving
+   the slider is one property assignment rather than twenty repaints in JS. */
+.picker { display: grid; gap: 14px; margin-top: 16px; }
 
-/* The cell can be wider than the tap size; the swatch must stay round rather
-   than stretching into an ellipse with it. */
-.swatch-grid .swatch {
+.hue {
+  -webkit-appearance: none;
+  appearance: none;
   width: 100%;
-  max-width: 3.9rem;
-  height: auto;
-  aspect-ratio: 1;
+  height: 2.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: linear-gradient(to right,
+    hsl(0 70% 45%), hsl(60 70% 45%), hsl(120 70% 45%),
+    hsl(180 70% 45%), hsl(240 70% 45%), hsl(300 70% 45%), hsl(360 70% 45%));
+  cursor: pointer;
 }
 
-/* The running choice, beside the button that commits it. */
-.dot-lg {
-  width: 2rem;
-  height: 2rem;
+/* A thumb wide enough to find with a thumb. */
+.hue::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 3px solid var(--ink);
+  cursor: grab;
+}
+
+.hue::-moz-range-thumb {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 3px solid var(--ink);
+  cursor: grab;
+}
+
+.cells {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+.cell {
+  width: 100%;
+  aspect-ratio: 1;
+  min-height: var(--tap);
+  border-radius: 12px;
+  border: 2px solid transparent;
+  background: hsl(var(--hue) calc(var(--s) * 1%) calc(var(--l) * 1%));
+  cursor: pointer;
+  padding: 0;
+}
+
+.cell.is-on {
+  border-color: var(--surface);
+  box-shadow: 0 0 0 3px var(--ink);
+}
+
+/* The running choice, beside the button that commits it. Deliberately not a
+   .dot: that lightens itself in the dark theme so a store's colour reads
+   against the background, which is right there and a lie here — a preview has
+   to be the colour you are about to get. */
+.picker-preview {
+  width: 2.2rem;
+  height: 2.2rem;
   flex: none;
+  border-radius: 999px;
+  background: var(--fz, var(--ink-3));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18);
 }
 
 /* A settings row: label on the left, controls on the right, hairline between. */

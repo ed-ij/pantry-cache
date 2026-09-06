@@ -639,34 +639,70 @@ function paletteColours() {
   return out;
 }
 
+/** Hue, and the two axes of the grid. Nothing outside these ranges is offered:
+ *  saturation never falls low enough to reach grey, and lightness never climbs
+ *  to white or drops to black. The colour is painted as a dot and mixed into a
+ *  badge behind text, so those are not choices, they are ways to look broken. */
+var HUE_STEPS = 360;
+var SATS = [40, 52, 64, 76, 88];
+var LUMS = [54, 45, 36, 28];
+
+function hexToHsl(hex) {
+  var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
+  if (!m) return null;
+  var r = parseInt(m[1], 16) / 255, g = parseInt(m[2], 16) / 255, b = parseInt(m[3], 16) / 255;
+  var max = Math.max(r, g, b), min = Math.min(r, g, b);
+  var l = (max + min) / 2;
+  if (max === min) return { h: 0, s: 0, l: l * 100 };
+  var d = max - min;
+  var s = d / (1 - Math.abs(2 * l - 1));
+  var h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  h = Math.round(h * 60);
+  return { h: (h + 360) % 360, s: s * 100, l: l * 100 };
+}
+
+/** The nearest offered saturation and lightness, so an existing colour lands
+ *  on a real cell rather than showing nothing selected. */
+function nearestStep(list, v) {
+  return list.reduce(function (best, x) {
+    return Math.abs(x - v) < Math.abs(best - v) ? x : best;
+  }, list[0]);
+}
+
+function colourState(value) {
+  var hsl = hexToHsl(value) || { h: 200, s: 64, l: 45 };
+  return { hue: Math.round(hsl.h), sat: nearestStep(SATS, hsl.s), lum: nearestStep(LUMS, hsl.l) };
+}
+
 /**
- * The picker as its own step. The native colour input was the wrong control for
- * a tablet: its targets are small and a tap outside the popover commits and
- * closes it, so a slip is indistinguishable from a choice. Here a tap only
- * moves the ring, and nothing changes until the button at the bottom is pressed.
+ * A hue slider and a grid of what that hue can be, which is the shape of the
+ * control people already know. The native input was the wrong one for a tablet:
+ * small targets, and a tap outside its popover commits whatever is under it and
+ * closes, so a slip could not be told from a choice.
  */
 function modalColour(m) {
-  var cur = (m.value || '').toLowerCase();
-  var list = paletteColours();
-  if (cur && list.every(function (c) { return c.toLowerCase() !== cur; })) list.unshift(m.value);
-
-  var grid = list.map(function (c) {
-    var on = cur === c.toLowerCase();
-    return '<button class="swatch' + (on ? ' is-on' : '') + '" style="--fz:' + esc(c) + '" ' +
-      'data-act="pick-colour" data-colour="' + esc(c) + '" ' +
-      'aria-label="' + esc(c) + '" aria-pressed="' + (on ? 'true' : 'false') + '"></button>';
+  var cells = LUMS.map(function (l) {
+    return SATS.map(function (s) {
+      var on = m.sat === s && m.lum === l;
+      return '<button class="cell' + (on ? ' is-on' : '') + '" ' +
+        'style="--s:' + s + ';--l:' + l + '" data-act="pick-cell" data-s="' + s + '" data-l="' + l + '" ' +
+        'aria-label="' + s + '% intensity, ' + l + '% brightness" ' +
+        'aria-pressed="' + (on ? 'true' : 'false') + '"></button>';
+    }).join('');
   }).join('');
 
   return wrap(
     '<h2 class="modal-title">Choose a colour</h2>' +
-    '<p class="muted" style="margin-top:0">Nothing changes until you press the button at the ' +
-      'bottom, so tap around until you find one you like.</p>' +
-    '<div class="swatch-grid" style="margin-top:14px">' + grid + '</div>' +
+    '<div class="picker" style="--hue:' + m.hue + '">' +
+      '<input class="hue" type="range" min="0" max="' + (HUE_STEPS - 1) + '" ' +
+        'value="' + m.hue + '" data-act="pick-hue" aria-label="Hue">' +
+      '<div class="cells">' + cells + '</div>' +
+    '</div>' +
     '<div class="row" style="margin-top:20px;align-items:center">' +
       '<button class="btn btn-ghost" data-act="cancel-colour">Cancel</button>' +
       '<span class="spacer"></span>' +
-      '<span class="dot dot-lg" style="--fz:' + esc(m.value) + '" aria-hidden="true"></span>' +
-      '<button class="btn btn-primary" style="margin-left:10px" data-act="use-colour">Use this one</button>' +
+      '<span class="picker-preview" style="--fz:' + esc(m.value) + '" aria-hidden="true"></span>' +
+      '<button class="btn btn-primary" style="margin-left:10px" data-act="use-colour">Use this colour</button>' +
     '</div>'
   );
 }
@@ -2462,15 +2498,34 @@ var ACTIONS = {
   'open-colour': function (d) {
     // The store dialog is itself a modal, so its half-finished edit is carried
     // through here and put back when this step closes, either way.
-    setState({ modal: {
+    var at = colourState(d.current);
+    setState({ modal: Object.assign({
       kind: 'colour',
-      value: d.current || '',
+      value: hslHex(at.hue, at.sat, at.lum),
       row: d.row === undefined ? null : Number(d.row),
       back: S.modal && S.modal.kind === 'store' ? S.modal : null,
-    } });
+    }, at) });
   },
-  'pick-colour': function (d) {
-    setState({ modal: Object.assign({}, S.modal, { value: d.colour }) });
+  // Dragging a slider that re-rendered under the finger would drop the gesture
+  // on the first move, so the hue is the one control here that updates the DOM
+  // it owns instead. The grid takes its hue from a custom property for exactly
+  // this reason: one assignment repaints all twenty cells.
+  'pick-hue': function (d, el) {
+    var m = S.modal;
+    m.hue = Number(el.value);
+    m.value = hslHex(m.hue, m.sat, m.lum);
+    var box = document.querySelector('.picker');
+    if (box) box.style.setProperty('--hue', m.hue);
+    var prev = document.querySelector('.picker-preview');
+    if (prev) prev.style.setProperty('--fz', m.value);
+  },
+  'pick-cell': function (d) {
+    var m = S.modal;
+    var sat = Number(d.s);
+    var lum = Number(d.l);
+    setState({ modal: Object.assign({}, m, {
+      sat: sat, lum: lum, value: hslHex(m.hue, sat, lum),
+    }) });
   },
   'cancel-colour': function () {
     setState({ modal: S.modal.back || null });
