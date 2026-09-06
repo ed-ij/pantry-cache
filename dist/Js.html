@@ -77,7 +77,28 @@ function esc(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/**
+ * One bag's weight, to the gram. Constraint 6 stores what was entered and this
+ * has to show it: at two decimals a bag weighed at 12345 g read "12.35 kg", and
+ * splitting it four ways gave four bags reading 3.09 kg — 12.36 kg between them,
+ * against the 12.35 kg that had just been on screen. The grams were right the
+ * whole time; the display was the only thing losing them.
+ *
+ * Trailing zeros are dropped, so the precision only appears when it is real:
+ * 2 kg stays "2 kg", 2.5 stays "2.5 kg", and 12345 says so.
+ */
 function fmtW(g) {
+  g = Math.round(Number(g) || 0);
+  if (g < 1000) return g + ' g';
+  return (g / 1000).toFixed(3).replace(/\.?0+$/, '') + ' kg';
+}
+
+/**
+ * A total across many bags, where the gram is noise rather than a fact somebody
+ * entered — nobody weighed the freezer, and "38.954 kg" in the header reads as
+ * false precision about a number that changes with every bag.
+ */
+function fmtWTotal(g) {
   g = Math.round(Number(g) || 0);
   if (g < 1000) return g + ' g';
   return (g / 1000).toFixed(2).replace(/\.?0+$/, '') + ' kg';
@@ -230,7 +251,7 @@ function lotsSize(lots, weightFirst) {
     .map(function (u) { return fmtCount(u.total, u.unit); });
 
   var w = sum(lots, function (l) { return l.weightG; });
-  var weight = w > 0 ? [fmtW(w)] : [];
+  var weight = w > 0 ? [fmtWTotal(w)] : [];
 
   var parts = weightFirst ? weight.concat(counts) : counts.concat(weight);
   return parts.length ? parts : ['—'];
@@ -1390,12 +1411,12 @@ function storeFilter(warm) {
   var allTotal = sum(S.inventory, function (l) { return l.weightG; });
   return '<div class="chips">' +
     '<button class="chip' + (S.store === 'all' ? on : '') + '" data-act="set-store-filter" data-name="all">' +
-      'All stores <span class="chip-num">' + esc(fmtW(allTotal)) + '</span></button>' +
+      'All stores <span class="chip-num">' + esc(fmtWTotal(allTotal)) + '</span></button>' +
     S.stores.map(function (f) {
       var t = sum(S.inventory.filter(function (l) { return l.store === f.name; }), function (l) { return l.weightG; });
       return '<button class="chip' + (S.store === f.name ? on : '') + '" data-act="set-store-filter" data-name="' + esc(f.name) + '">' +
         dot(f.colour) + esc(f.name) +
-        ' <span class="chip-num">' + esc(fmtW(t)) + '</span></button>';
+        ' <span class="chip-num">' + esc(fmtWTotal(t)) + '</span></button>';
     }).join('') +
     '</div>';
 }
