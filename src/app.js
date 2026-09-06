@@ -99,9 +99,15 @@ function fmtW(g) {
  *
  * One decimal, so the nearest 100 g. The question a total answers is roughly how
  * much is in there, and it is read at a glance from across a kitchen.
+ *
+ * Below a kilo it goes to the nearest 10 g rather than staying exact, which
+ * keeps the claim proportional rather than the digit count: 100 g of 10 kg is
+ * the same 1% as 10 g of 1 kg, whereas showing "987 g" under a header rounded
+ * to 39 kg claims the small total was measured more carefully than the big one.
+ * Rounding happens before the unit is chosen, so 995 g is 1 kg and not 1000 g.
  */
 function fmtWTotal(g) {
-  g = Math.round(Number(g) || 0);
+  g = Math.round((Number(g) || 0) / 10) * 10;
   if (g < 1000) return g + ' g';
   return (g / 1000).toFixed(1).replace(/\.0$/, '') + ' kg';
 }
