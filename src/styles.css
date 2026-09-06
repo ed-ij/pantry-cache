@@ -1084,11 +1084,14 @@ button, input, select, textarea {
   padding: 4px 18px 12px;
 }
 
+/* No vertical padding: the chevron inside carries a tap-sized minimum height
+   and everything is centred against it, so padding only added to a row that was
+   already as tall as it has to be. 84 px became 65. */
 .lot {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 0;
+  padding: 0;
   border-bottom: 1px dashed var(--line);
   font-size: .92rem;
 }
