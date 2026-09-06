@@ -428,6 +428,14 @@ button, input, select, textarea {
     background: color-mix(in oklab, var(--fz, var(--ink-3)) 66%, #ffffff);
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
   }
+
+  /* The picker has to lie the same way the dot does. A cell showing the stored
+     colour raw, beside dots that are lightened from it, would mean choosing one
+     colour and being given another — so the preview carries the transform and
+     the sheet keeps the untouched value. */
+  :root:not([data-theme="light"]) .cell {
+    background: color-mix(in oklab, var(--raw) 66%, #ffffff);
+  }
   
   /* The tint has to be mixed against the dark surface, not the light one, or
      a badge that reads as a faint wash on white reads as mud here. */
@@ -440,6 +448,10 @@ button, input, select, textarea {
 :root[data-theme="dark"] .dot {
   background: color-mix(in oklab, var(--fz, var(--ink-3)) 66%, #ffffff);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
+}
+
+:root[data-theme="dark"] .cell {
+  background: color-mix(in oklab, var(--raw) 66%, #ffffff);
 }
 
 /* The tint has to be mixed against the dark surface, not the light one, or
@@ -532,12 +544,13 @@ button, input, select, textarea {
 }
 
 .cell {
+  --raw: hsl(var(--hue) calc(var(--s) * 1%) calc(var(--l) * 1%));
   width: 100%;
   aspect-ratio: 1;
   min-height: var(--tap);
   border-radius: 12px;
   border: 2px solid transparent;
-  background: hsl(var(--hue) calc(var(--s) * 1%) calc(var(--l) * 1%));
+  background: var(--raw);
   cursor: pointer;
   padding: 0;
 }

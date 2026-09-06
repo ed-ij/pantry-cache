@@ -640,13 +640,19 @@ function paletteColours() {
   return out;
 }
 
-/** Hue, and the two axes of the grid. Nothing outside these ranges is offered:
- *  saturation never falls low enough to reach grey, and lightness never climbs
- *  to white or drops to black. The colour is painted as a dot and mixed into a
- *  badge behind text, so those are not choices, they are ways to look broken. */
+/**
+ * Hue, and the two axes of the grid. Nothing outside these ranges is offered:
+ * saturation never falls low enough to reach grey, and lightness never climbs
+ * to white or drops to black. The colour is painted as a dot and mixed into a
+ * badge behind text, so those are not choices, they are ways to look broken.
+ *
+ * The floors were found by looking rather than reasoned: below about 32%
+ * saturation the dark theme's white mix takes the hue out of it and the left of
+ * the grid goes grey, which is exactly what these bounds exist to prevent.
+ */
 var HUE_STEPS = 360;
-var SATS = [40, 52, 64, 76, 88];
-var LUMS = [54, 45, 36, 28];
+var SATS = [38, 52, 66, 80, 94];
+var LUMS = [62, 51, 40, 29];
 
 function hexToHsl(hex) {
   var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
@@ -702,8 +708,7 @@ function modalColour(m) {
     '<div class="row" style="margin-top:20px;align-items:center">' +
       '<button class="btn btn-ghost" data-act="cancel-colour">Cancel</button>' +
       '<span class="spacer"></span>' +
-      '<span class="picker-preview" style="--fz:' + esc(m.value) + '" aria-hidden="true"></span>' +
-      '<button class="btn btn-primary" style="margin-left:10px" data-act="use-colour">Use this colour</button>' +
+      '<button class="btn btn-primary" data-act="use-colour">Use this colour</button>' +
     '</div>'
   );
 }
