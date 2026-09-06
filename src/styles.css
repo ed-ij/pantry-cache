@@ -469,42 +469,48 @@ button, input, select, textarea {
 
 .lot.is-picked { background: var(--surface-2); }
 
-/* "Any other colour": a native colour input wearing the same swatch as the
-   presets beside it. The input itself is the target, so it fills the label. */
+/* "Choose another colour": a plus, not a colour. .swatch is on it too and
+   paints var(--fz, var(--ink-3)), which with no --fz is a solid grey disc. */
 .swatch-other {
-  position: relative;
   display: grid;
   place-items: center;
-  /* .swatch is also on this element and paints var(--fz, var(--ink-3)); with no
-     --fz set that is a solid grey disc, which hid the "+" against it. */
   background: transparent;
   box-shadow: none;
-  width: var(--tap);
-  height: var(--tap);
-  min-width: var(--tap);
-  border-radius: 999px;
   border: 2px dashed var(--line);
-  color: var(--ink-3);
-  font-size: 1.4rem;
-  font-weight: 600;
-  cursor: pointer;
-  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 0;
 }
 
-.swatch-other:focus-within {
+.swatch-other:hover, .swatch-other:focus-visible {
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.swatch-other input[type="color"] {
-  position: absolute;
-  inset: 0;
+/* The picker grid. auto-fill rather than a fixed column count, so it uses the
+   width it is given without ever shrinking a target below the tap size. */
+.swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--tap), 1fr));
+  gap: 10px;
+  justify-items: center;
+}
+
+/* The cell can be wider than the tap size; the swatch must stay round rather
+   than stretching into an ellipse with it. */
+.swatch-grid .swatch {
   width: 100%;
-  height: 100%;
-  opacity: 0;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
+  max-width: 3.9rem;
+  height: auto;
+  aspect-ratio: 1;
+}
+
+/* The running choice, beside the button that commits it. */
+.dot-lg {
+  width: 2rem;
+  height: 2rem;
+  flex: none;
 }
 
 /* A settings row: label on the left, controls on the right, hairline between. */

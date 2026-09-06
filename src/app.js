@@ -613,6 +613,64 @@ function isFirstRun() {
  * "Other" is a native colour input, which is the one control on this screen
  * that is better borrowed than built.
  */
+/**
+ * Kept to a mid band of lightness on purpose. The colour is painted as a dot and
+ * mixed into a badge behind text, so a near-white or near-black choice reads as
+ * broken rather than as a preference — and the person choosing has no way to
+ * know that in advance. Twenty-four evenly spread hues is more than enough to
+ * tell six or seven places apart.
+ */
+function hslHex(h, s, l) {
+  var a = (s / 100) * Math.min(l / 100, 1 - l / 100);
+  var f = function (n) {
+    var k = (n + h / 30) % 12;
+    var v = l / 100 - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
+    return ('0' + Math.round(255 * v).toString(16)).slice(-2);
+  };
+  return '#' + f(0) + f(8) + f(4);
+}
+
+function paletteColours() {
+  var hues = [6, 28, 44, 64, 96, 148, 172, 194, 212, 244, 280, 320];
+  var out = [];
+  [44, 32].forEach(function (l) {
+    hues.forEach(function (h) { out.push(hslHex(h, 62, l)); });
+  });
+  return out;
+}
+
+/**
+ * The picker as its own step. The native colour input was the wrong control for
+ * a tablet: its targets are small and a tap outside the popover commits and
+ * closes it, so a slip is indistinguishable from a choice. Here a tap only
+ * moves the ring, and nothing changes until the button at the bottom is pressed.
+ */
+function modalColour(m) {
+  var cur = (m.value || '').toLowerCase();
+  var list = paletteColours();
+  if (cur && list.every(function (c) { return c.toLowerCase() !== cur; })) list.unshift(m.value);
+
+  var grid = list.map(function (c) {
+    var on = cur === c.toLowerCase();
+    return '<button class="swatch' + (on ? ' is-on' : '') + '" style="--fz:' + esc(c) + '" ' +
+      'data-act="pick-colour" data-colour="' + esc(c) + '" ' +
+      'aria-label="' + esc(c) + '" aria-pressed="' + (on ? 'true' : 'false') + '"></button>';
+  }).join('');
+
+  return wrap(
+    '<h2 class="modal-title">Choose a colour</h2>' +
+    '<p class="muted" style="margin-top:0">Nothing changes until you press the button at the ' +
+      'bottom, so tap around until you find one you like.</p>' +
+    '<div class="swatch-grid" style="margin-top:14px">' + grid + '</div>' +
+    '<div class="row" style="margin-top:20px;align-items:center">' +
+      '<button class="btn btn-ghost" data-act="cancel-colour">Cancel</button>' +
+      '<span class="spacer"></span>' +
+      '<span class="dot dot-lg" style="--fz:' + esc(m.value) + '" aria-hidden="true"></span>' +
+      '<button class="btn btn-primary" style="margin-left:10px" data-act="use-colour">Use this one</button>' +
+    '</div>'
+  );
+}
+
 function colourSwatches(current, act, extra) {
   var palette = S.storeColours.length ? S.storeColours : ['#5F8A20'];
   var cur = (current || '').toLowerCase();
@@ -627,16 +685,10 @@ function colourSwatches(current, act, extra) {
   }).join('');
 
   return '<div class="swatches">' + swatches +
-    '<label class="swatch swatch-other" title="Any other colour">' +
-      '<span aria-hidden="true">+</span>' +
-      '<input type="color" value="' + esc(current || palette[0]) + '" ' +
-        'data-act="' + act + '" ' + extra + ' aria-label="Any other colour">' +
-    '</label>' +
+    '<button class="swatch swatch-other" data-act="open-colour" ' + extra + ' ' +
+      'data-current="' + esc(current || '') + '" ' +
+      'aria-label="Choose another colour">+</button>' +
   '</div>';
-}
-
-function swatchValue(d, el) {
-  return el && el.tagName === 'INPUT' ? el.value : d.colour;
 }
 
 function storeDraftColour(row, i) {
@@ -1557,6 +1609,7 @@ function renderModal() {
   if (m.kind === 'unit') return modalUnit(m);
   if (m.kind === 'edit') return modalEdit(m);
   if (m.kind === 'split') return modalSplit(m);
+  if (m.kind === 'colour') return modalColour(m);
   if (m.kind === 'move') return modalMove(m);
   if (m.kind === 'store') return modalStore(m);
   if (m.kind === 'rename') return modalRename(m);
@@ -2406,6 +2459,32 @@ var ACTIONS = {
     // selection later would be a surprise.
     setState({ editing: !S.editing, moving: {} });
   },
+  'open-colour': function (d) {
+    // The store dialog is itself a modal, so its half-finished edit is carried
+    // through here and put back when this step closes, either way.
+    setState({ modal: {
+      kind: 'colour',
+      value: d.current || '',
+      row: d.row === undefined ? null : Number(d.row),
+      back: S.modal && S.modal.kind === 'store' ? S.modal : null,
+    } });
+  },
+  'pick-colour': function (d) {
+    setState({ modal: Object.assign({}, S.modal, { value: d.colour }) });
+  },
+  'cancel-colour': function () {
+    setState({ modal: S.modal.back || null });
+  },
+  'use-colour': function () {
+    var m = S.modal;
+    if (m.back) {
+      setState({ modal: Object.assign({}, m.back, { colour: m.value }) });
+    } else {
+      firstRunDraft()[m.row].colour = m.value;
+      setState({ modal: null });
+    }
+  },
+
   'toggle-move': function (d) {
     var picked = Object.assign({}, S.moving);
     if (picked[d.id]) delete picked[d.id]; else picked[d.id] = true;
@@ -2426,8 +2505,8 @@ var ACTIONS = {
   'store-edit-where': function (d, el) {
     setState({ modal: Object.assign({}, S.modal, { where: el.value }) });
   },
-  'store-edit-colour': function (d, el) {
-    setState({ modal: Object.assign({}, S.modal, { colour: swatchValue(d, el) }) });
+  'store-edit-colour': function (d) {
+    setState({ modal: Object.assign({}, S.modal, { colour: d.colour }) });
   },
   'do-edit-store': function () { doEditStore(); },
 
@@ -2455,8 +2534,8 @@ var ACTIONS = {
   },
   // Fires from a preset button (data-colour) and from the native picker
   // (its value), which is why the source is checked rather than assumed.
-  'store-colour': function (d, el) {
-    firstRunDraft()[Number(d.row)].colour = swatchValue(d, el);
+  'store-colour': function (d) {
+    firstRunDraft()[Number(d.row)].colour = d.colour;
     setState({});
   },
   'store-suggest': function (d) {
@@ -2846,7 +2925,12 @@ function tryCloseModal() {
 }
 
 document.addEventListener('click', function (e) {
-  if (e.target.id === 'modal-host') return tryCloseModal();
+  if (e.target.id === 'modal-host') {
+    // The picker is a step inside another dialog, so backing out of it means
+    // going back one, not closing the lot.
+    if (S.modal && S.modal.kind === 'colour') return ACTIONS['cancel-colour']();
+    return tryCloseModal();
+  }
   var el = e.target.closest('[data-act]');
   if (!el) return;
   var act = el.dataset.act;
