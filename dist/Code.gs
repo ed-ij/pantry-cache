@@ -1,10 +1,10 @@
 /// Built by build.mjs from apps-script/host.js + src/backend.js — do not edit here.
 
 /** Stamped by build.mjs. Shown in the setup dialog and compared against latest.json. */
-const BUILD = '2026-09-06T18:17:50Z';
-const BUILD_COMMIT = '205010a';
-const BUILD_BRANCH = 'dev';
-const RELEASE_BASE = 'https://raw.githubusercontent.com/ed-ij/pantry-cache/dev/';
+const BUILD = '2026-09-06T18:20:51Z';
+const BUILD_COMMIT = '10c0480';
+const BUILD_BRANCH = 'main';
+const RELEASE_BASE = 'https://raw.githubusercontent.com/ed-ij/pantry-cache/main/';
 
 /**
  * Pantry Cache — Google Apps Script host.

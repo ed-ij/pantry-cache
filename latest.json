@@ -1,6 +1,6 @@
 {
-  "build": "2026-09-06T17:29:58Z",
-  "commit": "2ff2c6b",
-  "notes": "Now Pantry Cache, and it works for anywhere you keep things. Set your places up from the app, move bags between them, rename or recolour them, and see a bag's weight to the gram.",
-  "published": "2026-09-06T17:30:04.491Z"
+  "build": "2026-09-06T18:20:51Z",
+  "commit": "10c0480",
+  "notes": "Lists say when a bag went in once, to the month — choose the month or how long ago in Settings, and the exact day is on the bag itself. Tidier rows, and the store colours now work on any browser.",
+  "published": "2026-09-06T18:21:08.082Z"
 }
