@@ -1,6 +1,6 @@
-# Freezer Log
+# Pantry Cache
 
-A large-type, tablet-first web app for keeping track of what is in the freezers,
+A large-type, tablet-first web app for keeping track of what is in store,
 backed by a Google Sheet so the data can always be opened, read and corrected as
 a spreadsheet.
 
@@ -9,13 +9,13 @@ are in [SPEC.md](SPEC.md). Three things it does:
 
 | Tab | What it is for |
 | --- | --- |
-| **Put in** | Pick an item from a grid grouped by category, or type a new name. Set a weight and/or a count of pieces, say how many bags, choose a freezer, confirm. Dated today by default, easy to backdate. |
-| **In the freezers** | **By item** (grouped under Fruit / Vegetables / Herbs / …) or **By age** (oldest first, grouped by month), filtered by freezer and searchable. The freezer chips carry their own totals, so the filter row doubles as the overview. |
-| **Take out** | Oldest-first list you can filter by freezer or search. One tap to take a bag out, with an Undo. |
+| **Put in** | Pick an item from a grid grouped by category, or type a new name. Set a weight and/or a count of pieces, say how many bags, choose a store, confirm. Dated today by default, easy to backdate. |
+| **In store** | **By item** (grouped under Fruit / Vegetables / Herbs / …) or **By age** (oldest first, grouped by month), filtered by store and searchable. The store chips carry their own totals, so the filter row doubles as the overview. |
+| **Take out** | Oldest-first list you can filter by store or search. One tap to take a bag out, with an Undo. |
 
 Tapping any bag also offers **Change this bag…**, which can put right its
-freezer, date, weight, count or note, or split it into several bags. Items and
-categories can be renamed from the **In the freezers** tab. Every one of those
+store, date, weight, count or note, or split it into several bags. Items and
+categories can be renamed from the **In store** tab. Every one of those
 is undoable.
 
 ---
@@ -49,13 +49,13 @@ That writes `dist/` with the five files Apps Script wants.
 
 ### 2. Create the spreadsheet
 
-Go to [sheets.new](https://sheets.new), name it something like **Freezer Log**.
+Go to [sheets.new](https://sheets.new), name it something like **Pantry Cache**.
 
 ### 3. Add the script
 
 In the sheet: **Extensions → Apps Script**. Then, in the script editor:
 
-- Rename the project to `Freezer Log`.
+- Rename the project to `Pantry Cache`.
 - Replace the contents of `Code.gs` with `dist/Code.gs`.
 - **+ → HTML** three times, creating files named exactly `Index`, `Css` and `Js`
   (Apps Script adds the `.html` itself). Paste in `dist/Index.html`,
@@ -73,26 +73,26 @@ In the sheet: **Extensions → Apps Script**. Then, in the script editor:
 
 ### 4. Set up the tabs
 
-Back in the spreadsheet, reload the page. A **Freezer Log** menu appears next to
-Help. Choose **Freezer Log → Open the app / get my link**, which creates the tabs
+Back in the spreadsheet, reload the page. A **Pantry Cache** menu appears next to
+Help. Choose **Pantry Cache → Open the app / get my link**, which creates the tabs
 and then walks through deploying. Approve the permissions
 prompt (it is your own script, so Google shows the "unverified app" warning —
-**Advanced → Go to Freezer Log (unsafe)**).
+**Advanced → Go to Pantry Cache (unsafe)**).
 
-You now have four tabs: `Inventory`, `History`, `Items`, `Freezers`.
+You now have four tabs: `Inventory`, `History`, `Items`, `Stores`.
 
-### 5. List the real freezers
+### 5. List the real stores
 
-On the **Freezers** tab, replace the two example rows with the actual freezers:
+On the **Stores** tab, replace the two example rows with the actual stores:
 
 | Name | Where | Colour |
 | --- | --- | --- |
-| Kitchen | Fridge-freezer indoors | `#2f7fd0` |
-| Garage | Big chest freezer | `#2c8f68` |
+| Kitchen | Fridge-store indoors | `#2f7fd0` |
+| Garage | Big chest store | `#2c8f68` |
 | Utility | Upright by the back door | `#c0632a` |
 
 `Colour` is optional — leave it blank and one is chosen automatically. This is
-the only place freezers are defined; the app never invents one.
+the only place stores are defined; the app never invents one.
 
 Pick the colour for the **light** theme only. On the dark theme the app lightens
 it automatically, so one value works in both and it cannot end up invisible on
@@ -142,18 +142,18 @@ opens like an app, full screen, no address bar.
 
 ## The spreadsheet
 
-Open it any time from the app itself (bottom of the **In the freezers** tab) or
+Open it any time from the app itself (bottom of the **In store** tab) or
 from Google Drive. **File → Download → Microsoft Excel (.xlsx)** gives a real
 Excel file whenever one is wanted.
 
-### `Inventory` — what is in the freezers right now
+### `Inventory` — what is in store right now
 
 | Column | Notes |
 | --- | --- |
 | `ID` | Generated. Leave it alone; it is how Undo finds a row again. |
 | `Item` | e.g. `Raspberries` |
 | `Category` | e.g. `Fruit` |
-| `Freezer` | Must match a name on the `Freezers` tab |
+| `Store` | Must match a name on the `Stores` tab |
 | `Weight (g)` | **Grams**, as a plain number. 1.5 kg is `1500`. Blank if it was never weighed. |
 | `Date In` | A real date. Only the month and year matter for the views. |
 | `Note` | Free text, optional |
@@ -173,9 +173,9 @@ automatically the first time something new goes in, and the typical values are
 what the Put in form pre-fills next time. Tidy up duplicates here (`Rasberries`
 vs `Raspberries`) and the suggestions improve.
 
-### `Freezers`
+### `Stores`
 
-`Name`, `Where`, `Colour`. Add a row to add a freezer; the app picks it up on
+`Name`, `Where`, `Colour`. Add a row to add a store; the app picks it up on
 the next reload.
 
 ### Editing by hand
@@ -184,9 +184,9 @@ Safe to do at any time. A few rules:
 
 - **Don't rename or reorder the columns**, and don't insert new ones — the app
   reads them by position.
-- Renaming a freezer on the `Freezers` tab does *not* rename it in `Inventory`;
+- Renaming a store on the `Stores` tab does *not* rename it in `Inventory`;
   use Find & Replace on that column too.
-- If a tab gets deleted or mangled, **Freezer Log → Set up / repair sheets**
+- If a tab gets deleted or mangled, **Pantry Cache → Set up / repair sheets**
   puts the headers back.
 - The app reads the sheet when it loads. After editing by hand, tap the ↻ button
   in the app's top right.
@@ -230,19 +230,19 @@ heads shows its weight alone, rather than inventing a total of ten of nothing.
 Nothing has to be deleted and re-entered. Tap a bag anywhere it appears and
 choose **Change this bag…**:
 
-- **Freezer, date, weight, count, unit, note** — all editable, with the same
+- **Store, date, weight, count, unit, note** — all editable, with the same
   controls used when the bag went in.
 - **Split this into several bags** — a tub recorded as "8 blocks" becomes eight
   bags of one block. Weight and count are shared out as evenly as they divide,
   with any remainder going to the first bags. Useful once something is being
   used a portion at a time rather than all at once.
 
-**Renaming** is on the **In the freezers** tab, under **By item**:
+**Renaming** is on the **In store** tab, under **By item**:
 
 - The pencil beside a category heading renames the category.
 - Expanding an item shows **Rename "…"** beneath its bags.
 
-A rename reaches every bag in the freezers *and* every row in `History`, so past
+A rename reaches every bag in store *and* every row in `History`, so past
 records stay consistent with the new name. Renaming onto a name that already
 exists merges them rather than leaving two catalogue entries.
 
@@ -252,7 +252,7 @@ All of these can be undone from the toast, same as everything else.
 
 ## Keeping an existing copy up to date
 
-A copy that already has **Freezer Log → Check for updates** in its menu uses it.
+A copy that already has **Pantry Cache → Check for updates** in its menu uses it.
 A copy made before that existed needs one manual pass first —
 [UPGRADING.md](UPGRADING.md).
 
@@ -261,26 +261,26 @@ A copy made before that existed needs one manual pass first —
 Each person gets their own copy, in their own Google account, with their own web
 app and their own data — see [SHARING.md](SHARING.md). The short version is that
 replacing `/edit` with `/copy` in the template's URL gives a link that hands
-people their own copy, and the **Freezer Log** menu in that copy walks them
+people their own copy, and the **Pantry Cache** menu in that copy walks them
 through publishing it.
 
 ---
 
 ## Importing the old spreadsheet
 
-The hand-kept "Veg in freezers" workbook can be converted with:
+The hand-kept "Veg in stores" workbook can be converted with:
 
 ```bash
-node tools/import-sheet.mjs "~/Documents/Veg in freezers JUlY 2026.xlsx"
+node tools/import-sheet.mjs "~/Documents/Veg in stores JUlY 2026.xlsx"
 ```
 
 It reads the original (never writes to it) and produces `dev/data.json` so the
-result can be checked locally, plus `dev/import/{Freezers,Items,Inventory}.csv`
+result can be checked locally, plus `dev/import/{Stores,Items,Inventory}.csv`
 to paste into the Google Sheet tabs.
 
 The script prints a reconciliation against the SUM formulas already in the
 original, which is the quickest way to confirm nothing was lost or double
-counted. The mapping of columns to freezers, the item categories and the
+counted. The mapping of columns to stores, the item categories and the
 spelling corrections are all constants at the top of the file — adjust them
 there and re-run.
 
@@ -297,7 +297,7 @@ Anything added or taken out in the local app is written straight to
 npm run export
 ```
 
-That rewrites all four tabs — `Freezers`, `Items`, `Inventory` and `History` —
+That rewrites all four tabs — `Stores`, `Items`, `Inventory` and `History` —
 so what you paste into the Google Sheet matches what you last saw on screen.
 
 ---

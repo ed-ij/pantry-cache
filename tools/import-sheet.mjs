@@ -1,9 +1,9 @@
 /**
- * Imports the hand-kept "Veg in freezers" spreadsheet into Freezer Log.
+ * Imports the hand-kept "Veg in stores" spreadsheet into Pantry Cache.
  *
- *   node tools/import-sheet.mjs "~/Documents/Veg in freezers JUlY 2026.xlsx"
+ *   node tools/import-sheet.mjs "~/Documents/Veg in stores JUlY 2026.xlsx"
  *
- * The original is laid out as one column per freezer-and-year, one row per bag,
+ * The original is laid out as one column per store-and-year, one row per bag,
  * with the item name only on the first row of each block and running totals
  * mixed in as formulas. This reads it back into one row per bag, works out
  * whether each cell is a weight or a count, and writes:
@@ -28,28 +28,28 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 /** The sheet records a year per column but never a month. */
 const MONTH_DAY = '07-01';
 
-/** Column header (row 2) -> freezer name used in the app. */
+/** Column header (row 2) -> store name used in the app. */
 /**
  * Chosen to stay clear of the accent blue and warm orange the interface uses
  * everywhere, to stay apart from each other under red-green colour blindness,
  * and to read on white. The dark theme lightens them automatically.
  */
-const FREEZERS = [
-  { Name: 'Porch', Where: 'Chest freezer', Colour: '#5F8A20' },
-  { Name: 'Utility', Where: 'Upright freezer', Colour: '#7A3FA2' },
-  { Name: 'Shed', Where: 'Shed freezer', Colour: '#B53464' },
+const STORES = [
+  { Name: 'Porch', Where: 'Chest store', Colour: '#5F8A20' },
+  { Name: 'Utility', Where: 'Upright store', Colour: '#7A3FA2' },
+  { Name: 'Shed', Where: 'Shed store', Colour: '#B53464' },
 ];
 
 /**
- * Column E carries no year or freezer header of its own, but the sheet's own
+ * Column E carries no year or store header of its own, but the sheet's own
  * grand total (D25 = D24 + E24) adds it to the 2026 Shed column, so it is
  * treated as an overflow of that column.
  */
 const COLUMNS = {
-  B: { freezer: 'Porch', year: 2025 },
-  C: { freezer: 'Utility', year: 2025 },
-  D: { freezer: 'Shed', year: 2026 },
-  E: { freezer: 'Shed', year: 2026 },
+  B: { store: 'Porch', year: 2025 },
+  C: { store: 'Utility', year: 2025 },
+  D: { store: 'Shed', year: 2026 },
+  E: { store: 'Shed', year: 2026 },
 };
 
 const CATEGORIES = {
@@ -217,7 +217,7 @@ function parseCell(text, where) {
   m = t.match(/^(\d+(?:\.\d+)?)\s*g?$/i);
   if (m) {
     const n = Number(m[1]);
-    // Nothing in a freezer weighs under 20 g, so a small bare number is a count.
+    // Nothing in a store weighs under 20 g, so a small bare number is a count.
     return n >= 20 ? bag({ weightG: Math.round(n) }) : bag({ count: n, unit: 'pieces' });
   }
 
@@ -227,7 +227,7 @@ function parseCell(text, where) {
 
 /* ------------------------------------------------------------------- main */
 
-const source = process.argv[2] || join(process.env.HOME, 'Documents', 'Veg in freezers JUlY 2026.xlsx');
+const source = process.argv[2] || join(process.env.HOME, 'Documents', 'Veg in stores JUlY 2026.xlsx');
 const cells = readSheet(unzip(readFileSync(source)));
 
 const maxRow = Math.max(...Object.values(cells).map((c) => c.row));
@@ -303,7 +303,7 @@ const Inventory = inventory.map((b) => ({
   ID: newId(),
   Item: b.item,
   Category: categoryOf(b.item),
-  Freezer: COLUMNS[b.col].freezer,
+  Store: COLUMNS[b.col].store,
   'Weight (g)': b.weightG || '',
   'Date In': `${COLUMNS[b.col].year}-${MONTH_DAY}`,
   Note: b.note || '',
@@ -337,7 +337,7 @@ const Items = [...byItem.entries()].map(([item, rows]) => ({
 
 /* --------------------------------------------------------------- write out */
 
-const data = { Freezers: FREEZERS, Items, Inventory, History: [] };
+const data = { Stores: STORES, Items, Inventory, History: [] };
 const dataPath = join(ROOT, 'dev', 'data.json');
 
 // Re-importing throws away anything added in the app since the last import,
@@ -365,8 +365,8 @@ console.log(`Read ${source}`);
 console.log(`  ${Inventory.length} bags across ${byItem.size} items, ${skippedTotals} total-row formulas skipped`);
 console.log(`  ${weighed.length} weighed (${totalKg.toFixed(2)} kg), ${counted.length} counted\n`);
 
-for (const f of FREEZERS.map((x) => x.Name)) {
-  const rows = Inventory.filter((r) => r.Freezer === f);
+for (const f of STORES.map((x) => x.Name)) {
+  const rows = Inventory.filter((r) => r.Store === f);
   const kg = rows.reduce((t, r) => t + (r['Weight (g)'] || 0), 0) / 1000;
   console.log(`  ${f.padEnd(8)} ${String(rows.length).padStart(3)} bags  ${kg.toFixed(2)} kg`);
 }
@@ -381,4 +381,4 @@ if (warnings.length) {
   for (const w of warnings) console.log(`  - ${w}`);
 }
 
-console.log('\nWrote dev/data.json and dev/import/{Freezers,Items,Inventory}.csv');
+console.log('\nWrote dev/data.json and dev/import/{Stores,Items,Inventory}.csv');

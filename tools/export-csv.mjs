@@ -15,10 +15,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Column order per tab, matching TABLES in src/backend.js. */
 const TABS = {
-  Freezers: ['Name', 'Where', 'Colour'],
+  Stores: ['Name', 'Where', 'Colour'],
   Items: ['Item', 'Category', 'Typical weight (g)', 'Typical count', 'Unit'],
-  Inventory: ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit'],
-  History: ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Date Out', 'Note', 'Count', 'Unit'],
+  Inventory: ['ID', 'Item', 'Category', 'Store', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit'],
+  History: ['ID', 'Item', 'Category', 'Store', 'Weight (g)', 'Date In', 'Date Out', 'Note', 'Count', 'Unit'],
 };
 
 function toCsv(headers, rows) {
@@ -60,5 +60,5 @@ if (process.argv[1] && process.argv[1].endsWith('export-csv.mjs')) {
   const inv = store.Inventory || [];
   const kg = inv.reduce((t, r) => t + (Number(r['Weight (g)']) || 0), 0) / 1000;
   const items = new Set(inv.map((r) => r.Item)).size;
-  console.log(`\n  ${inv.length} bags, ${items} items, ${kg.toFixed(2)} kg in the freezers`);
+  console.log(`\n  ${inv.length} bags, ${items} items, ${kg.toFixed(2)} kg in the stores`);
 }

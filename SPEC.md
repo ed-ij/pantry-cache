@@ -1,4 +1,4 @@
-# Freezer Log — specification
+# Pantry Cache — specification
 
 What the app is, why it is shaped the way it is, and what it deliberately does
 not do. For how to build, deploy or share it, see [README](README.md) and
@@ -8,16 +8,16 @@ not do. For how to build, deploy or share it, see [README](README.md) and
 
 ## Purpose
 
-Keep track of home-grown fruit and vegetables across several domestic freezers,
+Keep track of home-grown fruit and vegetables across several domestic stores,
 replacing a hand-kept spreadsheet. The primary user is not technically confident
-and works standing at a freezer with a tablet.
+and works standing at a store with a tablet.
 
 It answers three questions and no others:
 
 | | |
 | --- | --- |
 | **Put in** | Something has been picked and bagged. Record it. |
-| **In the freezers** | What have I got? Grouped by category and item. |
+| **In store** | What have I got? Grouped by category and item. |
 | **Take out** | What has been in there longest, and remove what I have used. |
 
 ## Shape
@@ -35,16 +35,16 @@ no server to keep running.
 ## Data model
 
 A **bag** (one row of `Inventory`) is the unit of everything: one physical bag,
-tub or box in one freezer, put in on one date. Quantities are never aggregated
+tub or box in one store, put in on one date. Quantities are never aggregated
 in storage — six bags of raspberries are six rows — because bags are taken out
 individually.
 
 | Tab | Columns |
 | --- | --- |
-| `Inventory` | `ID`, `Item`, `Category`, `Freezer`, `Weight (g)`, `Date In`, `Note`, `Count`, `Unit`, `Month only` |
+| `Inventory` | `ID`, `Item`, `Category`, `Store`, `Weight (g)`, `Date In`, `Note`, `Count`, `Unit`, `Month only` |
 | `History` | the same, plus `Date Out` |
 | `Items` | `Item`, `Category`, `Typical weight (g)`, `Typical count`, `Unit` |
-| `Freezers` | `Name`, `Where`, `Colour` |
+| `Stores` | `Name`, `Where`, `Colour` |
 
 A bag needs **a weight, a count, or both**. Sweetcorn is better recorded as
 *6 cobs* than as 900 g; raspberries are better as a weight.
@@ -87,9 +87,9 @@ because a tablet showing bags that the spreadsheet does not have is worse.
 **3. Every action is undoable, and errors are written in English.** The user
 cannot be expected to reason about state. No confirmation dialogs guarding
 routine work; a 30-second undo instead, plus a session list of what was just
-done. Backend errors read "Please choose which freezer it is in", never a code.
+done. Backend errors read "Please choose which store it is in", never a code.
 
-**4. Built for a tablet at a freezer.** Minimum ~54 px touch targets, no text
+**4. Built for a tablet at a store.** Minimum ~54 px touch targets, no text
 below 0.8 rem, and every foreground/background pair at 4.5:1 or better **in both
 themes** — checked at build time by `tools/check-contrast.mjs`, because "large
 type" is an adjective and the tap size was the only half with a number. Bottom
@@ -106,10 +106,10 @@ says "Jul 2025" rather than inventing a 1st and showing it like a chosen day.
 removed: once a keypad exists, rounding is the user's business, not the app's.
 Ounces convert on entry and are not stored.
 
-**7a. One list per question.** *In the freezers* answers "what have I got" by
+**7a. One list per question.** *In store* answers "what have I got" by
 item; *Take out* answers "what is oldest" and removes it. They used to be two
 renderings of the same list with different chrome and separate filter state,
-which is three tabs and two-and-a-half screens. The freezer filter and the
+which is three tabs and two-and-a-half screens. The store filter and the
 search are shared, because standing at the Shed is a fact about where she is,
 not about which tab she is on.
 
@@ -117,7 +117,7 @@ not about which tab she is on.
 heads is not ten of anything, so mixed sets show their weight, or each unit
 listed separately.
 
-**8. Freezers are defined only in the `Freezers` tab.** The app never invents
+**8. Stores are defined only in the `Stores` tab.** The app never invents
 one. Colours are picked for the light theme and lightened automatically for
 dark, so one value cannot be wrong on one of them.
 
@@ -144,7 +144,7 @@ Known and accepted. Most follow directly from a constraint above.
 Script serves the page from Google, and its sandboxed iframe cannot register a
 service worker, so an offline cache is not available on this architecture. If
 the connection drops while the app is open, actions fail with a plain message
-and nothing is queued or synced later. *A freezer beyond wi-fi range cannot be
+and nothing is queued or synced later. *A store beyond wi-fi range cannot be
 used with this app.* Test the walk before relying on it.
 
 **Latency.** Each action is a round trip to Google, typically one to two
@@ -172,13 +172,13 @@ site, which anonymous write access would otherwise invite.
 
 **Copies update by pulling, never by being pushed to.** Nothing propagates on
 its own — that is constraint 11 doing its job, and a bad release cannot reach
-anyone's freezer list. *Freezer Log → Check for updates* asks a small file on
+anyone's store list. *Pantry Cache → Check for updates* asks a small file on
 GitHub what the current build is, compares it against the one stamped into this
 copy, and hands over the files to paste. Every copy can say what it is running;
 none of them changes without being told to.
 
-**Freezers cannot be renamed from the app.** Items and categories can. Renaming a
-freezer means editing the `Freezers` tab *and* find-and-replacing the `Freezer`
+**Stores cannot be renamed from the app.** Items and categories can. Renaming a
+store means editing the `Stores` tab *and* find-and-replacing the `Store`
 column, or every existing bag is orphaned.
 
 **Scale.** Designed for hundreds of bags. `History` grows for ever and is never
@@ -192,7 +192,7 @@ would earn its place only by making the three questions above harder to answer.
 
 **Small things.** Backdating to a month stores the 1st and flags the row
 `Month only`, so the day is never shown as though it were chosen. Dark-theme
-freezer colours need `color-mix`, and degrade to the stored colour without it;
+store colours need `color-mix`, and degrade to the stored colour without it;
 the top and bottom bars declare a plain colour first so they stay opaque
 without it.
 

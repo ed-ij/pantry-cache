@@ -1,13 +1,13 @@
 /// Built by build.mjs from apps-script/host.js + src/backend.js — do not edit here.
 
 /** Stamped by build.mjs. Shown in the setup dialog and compared against latest.json. */
-const BUILD = '2026-09-06T10:34:54Z';
-const BUILD_COMMIT = '93a8a4b';
-const BUILD_BRANCH = 'main';
-const RELEASE_BASE = 'https://raw.githubusercontent.com/ed-ij/pantry-cache/main/';
+const BUILD = '2026-09-06T10:51:54Z';
+const BUILD_COMMIT = '748cf7f';
+const BUILD_BRANCH = 'dev';
+const RELEASE_BASE = 'https://raw.githubusercontent.com/ed-ij/pantry-cache/dev/';
 
 /**
- * Freezer Log — Google Apps Script host.
+ * Pantry Cache — Google Apps Script host.
  *
  * Provides the `DB` adapter that src/backend.js expects, backed by the
  * spreadsheet this script is bound to, plus the web-app entry point.
@@ -15,7 +15,7 @@ const RELEASE_BASE = 'https://raw.githubusercontent.com/ed-ij/pantry-cache/main/
  */
 
 /** Bumped when the sheet layout changes, to force a one-off re-setup. */
-const SETUP_VERSION = '2';
+const SETUP_VERSION = '3';
 
 let SS_ = null;
 
@@ -37,6 +37,35 @@ function spreadsheet_() {
 let CACHE_ = {};
 let HEADERS_ = {};
 
+/**
+ * The app was called Freezer Log and its tab was `Freezers`; both were renamed
+ * once it became clear nothing about it is specific to freezing. A sheet
+ * written by the old code still says so.
+ *
+ * This has to run before the header check below. That check appends whatever is
+ * missing, so left to itself it would add an empty `Store` column beside the
+ * populated `Freezer` one and quietly orphan every value in it. Renaming in
+ * place keeps the data attached to its column.
+ *
+ * Idempotent: a sheet already using the new names, or a fresh one with neither,
+ * comes out unchanged.
+ */
+function migrateFreezersToStores_(ss) {
+  const old = ss.getSheetByName('Freezers');
+  if (old && !ss.getSheetByName('Stores')) old.setName('Stores');
+
+  ['Inventory', 'History'].forEach(function (name) {
+    const sh = ss.getSheetByName(name);
+    if (!sh) return;
+    const row = headerRow_(sh);
+    const at = row.indexOf('Freezer');
+    if (at < 0 || row.indexOf('Store') >= 0) return;
+    sh.getRange(1, at + 1).setValue('Store');
+  });
+
+  HEADERS_ = {};
+}
+
 const DB = {
   /**
    * Creates and formats the tabs. Formatting the sheet on every page load would
@@ -49,6 +78,8 @@ const DB = {
     const names = Object.keys(TABLES);
     const allPresent = names.every(function (n) { return !!ss.getSheetByName(n); });
     if (!force && allPresent && props.getProperty('SETUP_VERSION') === SETUP_VERSION) return;
+
+    migrateFreezersToStores_(ss);
 
     let created = false;
 
@@ -96,8 +127,8 @@ const DB = {
       if (stray && ss.getSheets().length > 1 && stray.getLastRow() === 0) ss.deleteSheet(stray);
     }
 
-    if (!DB.getAll('Freezers').filter(function (r) { return txt(r.Name); }).length) {
-      DB.append('Freezers', SEED_FREEZERS);
+    if (!DB.getAll('Stores').filter(function (r) { return txt(r.Name); }).length) {
+      DB.append('Stores', SEED_STORES);
     }
 
     props.setProperty('SETUP_VERSION', SETUP_VERSION);
@@ -336,7 +367,7 @@ function findRow_(sh, id) {
 function doGet() {
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
-    .setTitle('Freezer Log')
+    .setTitle('Pantry Cache')
     // Deployed with Anyone access, so the URL alone can write. Without this,
     // any page may frame the app, which is the whole of a clickjacking setup.
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.SAMEORIGIN)
@@ -350,7 +381,7 @@ function include(name) {
 /** Spreadsheet menu, so the sheet itself offers a way in. */
 function onOpen() {
   SpreadsheetApp.getUi()
-    .createMenu('Freezer Log')
+    .createMenu('Pantry Cache')
     .addItem('Open the app / get my link', 'showSetup')
     .addItem('Set up / repair sheets', 'setupSheets')
     .addItem('Check for updates', 'showUpdate')
@@ -376,7 +407,7 @@ function setupSheets() {
       'interrupted partway.\n\n' + both.slice(0, 20).join('\n') +
       (both.length > 20 ? '\n…and ' + (both.length - 20) + ' more' : '') +
       '\n\nDelete whichever row is wrong: the History row if the bag is still ' +
-      'in the freezer, the Inventory row if it has been used.',
+      'in the store, the Inventory row if it has been used.',
       SpreadsheetApp.getUi().ButtonSet.OK,
     );
   }
@@ -413,7 +444,7 @@ function showSetup() {
 
   SpreadsheetApp.getUi().showModalDialog(
     HtmlService.createHtmlOutput(html).setWidth(560).setHeight(600),
-    'Freezer Log',
+    'Pantry Cache',
   );
 }
 
@@ -428,7 +459,7 @@ function showSetup() {
  * So each copy pulls rather than being pushed to: it asks a small JSON file on
  * GitHub what the current build is, compares it against its own stamp, and if
  * there is something newer, shows the files to paste. Nothing updates itself.
- * A bad release still cannot reach anyone's freezer list without them choosing
+ * A bad release still cannot reach anyone's store list without them choosing
  * to take it, so independence survives intact.
  */
 const RELEASE_FILES = [
@@ -482,13 +513,13 @@ function apiUpdateFile(name) {
 function showUpdate() {
   SpreadsheetApp.getUi().showModalDialog(
     HtmlService.createHtmlOutputFromFile('Update').setWidth(620).setHeight(620),
-    'Freezer Log — updates',
+    'Pantry Cache — updates',
   );
 }
 
 
 /**
- * Freezer Log — shared backend logic.
+ * Pantry Cache — shared backend logic.
  *
  * This file is the single source of truth for how the data behaves. It runs in
  * two places:
@@ -509,21 +540,21 @@ function showUpdate() {
  * header when the layout is refreshed.
  */
 const TABLES = {
-  Freezers: ['Name', 'Where', 'Colour'],
+  Stores: ['Name', 'Where', 'Colour'],
   Items: ['Item', 'Category', 'Typical weight (g)', 'Typical count', 'Unit'],
-  Inventory: ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit', 'Month only'],
-  History: ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Date Out', 'Note', 'Count', 'Unit', 'Month only'],
+  Inventory: ['ID', 'Item', 'Category', 'Store', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit', 'Month only'],
+  History: ['ID', 'Item', 'Category', 'Store', 'Weight (g)', 'Date In', 'Date Out', 'Note', 'Count', 'Unit', 'Month only'],
 };
 
 const DATE_COLUMNS = ['Date In', 'Date Out'];
 
 const DEFAULT_CATEGORIES = ['Fruit', 'Vegetables', 'Herbs', 'Meat & fish', 'Prepared', 'Other'];
 
-const FREEZER_COLOURS = ['#5F8A20', '#7A3FA2', '#B53464', '#1F7A6B', '#8A6A12', '#00699B'];
+const STORE_COLOURS = ['#5F8A20', '#7A3FA2', '#B53464', '#1F7A6B', '#8A6A12', '#00699B'];
 
-const SEED_FREEZERS = [
-  { Name: 'Kitchen', Where: 'Fridge-freezer indoors', Colour: FREEZER_COLOURS[0] },
-  { Name: 'Garage', Where: 'Chest freezer', Colour: FREEZER_COLOURS[1] },
+const SEED_STORES = [
+  { Name: 'Kitchen', Where: 'Fridge-store indoors', Colour: STORE_COLOURS[0] },
+  { Name: 'Garage', Where: 'Chest store', Colour: STORE_COLOURS[1] },
 ];
 
 /* ------------------------------------------------------------------ helpers */
@@ -534,7 +565,7 @@ const SEED_FREEZERS = [
  * problem against 46,656 — at the 99 the quantity stepper offers, roughly one
  * batch in twelve contained a duplicate. A duplicate ID is not cosmetic:
  * deleteByIds and findRow_ both match on the string, so taking one of the twins
- * out of the freezer removes both.
+ * out of the store removes both.
  *
  * The counter makes a collision within one batch impossible. It starts at a
  * random offset so that two executions landing in the same millisecond do not
@@ -668,7 +699,7 @@ function toLot(r) {
     id: txt(r.ID),
     item: txt(r.Item),
     category: txt(r.Category) || 'Other',
-    freezer: txt(r.Freezer),
+    store: txt(r.Store),
     weightG: Math.round(w.value),
     count: Math.round(c.value),
     unit: txt(r.Unit),
@@ -693,7 +724,7 @@ function toLot(r) {
 function apiGetState() {
   DB.ensure();
 
-  const freezers = DB.getAll('Freezers')
+  const stores = DB.getAll('Stores')
     .filter(function (r) { return txt(r.Name); })
     .map(function (r, i) {
       return {
@@ -702,18 +733,18 @@ function apiGetState() {
         // The colour is handed to CSS as a custom property. `var(--fz, fallback)`
         // only uses its fallback when the property is *unset*, so a cell holding
         // "2f7fd0" — the hash left off, which the README invites by asking for
-        // hex codes — set it to something invalid and every dot for that freezer
+        // hex codes — set it to something invalid and every dot for that store
         // disappeared rather than going grey. This is also the one place sheet
         // data reaches a style context, so it is worth being strict.
         colour: /^#[0-9a-f]{3,8}$/i.test(txt(r.Colour))
           ? txt(r.Colour)
-          : FREEZER_COLOURS[i % FREEZER_COLOURS.length],
+          : STORE_COLOURS[i % STORE_COLOURS.length],
       };
     });
 
   const inventory = DB.getAll('Inventory').filter(function (r) { return txt(r.ID); }).map(toLot);
 
-  // History is read only to keep things that are no longer in a freezer in the
+  // History is read only to keep things that are no longer in a store in the
   // type-ahead, and it is never pruned — so the app's slowest path was paying,
   // on every load and again after every rename and undo, for its least
   // important feature. Only the four columns that matter are kept, and the
@@ -731,7 +762,7 @@ function apiGetState() {
 
   // The Items sheet drives the type-ahead. Anything that only exists in the
   // inventory (because someone typed straight into the sheet) is folded in too,
-  // so suggestions never miss something that is genuinely in a freezer.
+  // so suggestions never miss something that is genuinely in a store.
   const items = {};
   DB.getAll('Items').filter(function (r) { return txt(r.Item); }).forEach(function (r) {
     const name = cleanName(r.Item);
@@ -745,14 +776,14 @@ function apiGetState() {
     };
   });
   // How recently something was used, not only how often. `uses` counted every
-  // appearance in an unpruned History for ever, so an item frozen heavily three
+  // appearance in an unpruned History for ever, so an item put in heavily three
   // years ago outranked this season's — and the Put in grid shows six tiles per
   // category, so that decided what she sees without tapping "+ 9 more".
   const today = DB.today();
   const cutoff = (Number(today.slice(0, 4)) - 1) + today.slice(4);
 
-  const score = function (lot, inFreezer) {
-    if (inFreezer) return 1;                       // in a freezer now: full weight
+  const score = function (lot, inStore) {
+    if (inStore) return 1;                       // in a store now: full weight
     if (!lot.dateOut || lot.dateOut >= cutoff) return 1;  // used within the year
     return 0.25;                                   // older than that: a quarter
   };
@@ -760,7 +791,7 @@ function apiGetState() {
   inventory.forEach(function (lot) { tally(lot, true); });
   history.forEach(function (lot) { tally(lot, false); });
 
-  function tally(lot, inFreezer) {
+  function tally(lot, inStore) {
     const k = keyOf(lot.item);
     if (!k) return;
     if (!items[k]) {
@@ -772,7 +803,7 @@ function apiGetState() {
     }
     // A unit typed straight into the sheet should still reach the form.
     if (!items[k].unit && lot.unit) items[k].unit = lot.unit;
-    items[k].uses += score(lot, inFreezer);
+    items[k].uses += score(lot, inStore);
   }
 
   const itemList = Object.keys(items).map(function (k) { return items[k]; });
@@ -795,9 +826,9 @@ function apiGetState() {
   });
 
   // History stays in the sheet for later analysis; the app only needs what is
-  // currently in the freezers, so it is not sent over the wire.
+  // currently in the stores, so it is not sent over the wire.
   return {
-    freezers: freezers,
+    stores: stores,
     items: itemList,
     categories: Object.keys(categories).map(function (k) { return categories[k]; }),
     inventory: inventory,
@@ -839,7 +870,7 @@ function fingerprint_(table, ids) {
     .map(function (r) {
       return [
         txt(r.ID), Math.round(num(r['Weight (g)'])), Math.round(num(r.Count)),
-        keyOf(r.Unit), keyOf(r.Freezer), normDate(r['Date In']),
+        keyOf(r.Unit), keyOf(r.Store), normDate(r['Date In']),
         keyOf(r.Item), keyOf(r.Category), txt(r.Note), normDate(r['Date Out']),
       ].join('\u0001');
     })
@@ -917,8 +948,8 @@ function apiAdd(p) {
     const item = cleanName(p && p.item);
     if (!item) throw new Error('Please choose what you are freezing.');
 
-    const freezer = txt(p.freezer);
-    if (!freezer) throw new Error('Please choose which freezer it is going in.');
+    const store = txt(p.store);
+    if (!store) throw new Error('Please choose which store it is going in.');
 
     const category = txt(p.category) || 'Other';
     const weightG = Math.max(0, Math.round(num(p.weightG)));
@@ -941,7 +972,7 @@ function apiAdd(p) {
         ID: newId('L'),
         Item: item,
         Category: category,
-        Freezer: freezer,
+        Store: store,
         'Weight (g)': weightG || '',
         'Date In': dateIn,
         Note: note,
@@ -994,7 +1025,7 @@ function removeWhole_(ids, dateOutRaw) {
       ID: txt(r.ID),
       Item: txt(r.Item),
       Category: txt(r.Category),
-      Freezer: txt(r.Freezer),
+      Store: txt(r.Store),
       'Weight (g)': Math.round(num(r['Weight (g)'])) || '',
       'Date In': normDate(r['Date In']),
       'Date Out': dateOut,
@@ -1004,7 +1035,7 @@ function removeWhole_(ids, dateOutRaw) {
       'Month only': txt(r['Month only']),
     });
   });
-  if (!foundIds.length) throw new Error('Those bags are no longer in the freezer.');
+  if (!foundIds.length) throw new Error('Those bags are no longer in the store.');
 
   DB.append('History', histRows);
   DB.deleteByIds('Inventory', foundIds);
@@ -1024,7 +1055,7 @@ function apiRemove(p) {
 }
 
 /**
- * Takes part of a bag out, leaving the rest in the freezer. A bag that is
+ * Takes part of a bag out, leaving the rest in the store. A bag that is
  * counted splits by count — two cobs out of six — and its weight follows the
  * same proportion. A bag that is only weighed splits by weight.
  */
@@ -1037,7 +1068,7 @@ function apiRemovePart(p) {
     // subtract 300, and the second write puts 300 g back that is not there.
     const id = txt(p && p.id);
     const lot = DB.getAll('Inventory').filter(function (r) { return txt(r.ID) === id; })[0];
-    if (!lot) throw new Error('That bag is no longer in the freezer.');
+    if (!lot) throw new Error('That bag is no longer in the store.');
 
     const haveW = Math.round(num(lot['Weight (g)']));
     const haveC = Math.round(num(lot.Count));
@@ -1065,7 +1096,7 @@ function apiRemovePart(p) {
       ID: historyId,
       Item: txt(lot.Item),
       Category: txt(lot.Category),
-      Freezer: txt(lot.Freezer),
+      Store: txt(lot.Store),
       'Weight (g)': takeW || '',
       'Date In': normDate(lot['Date In']),
       'Date Out': dateOut,
@@ -1089,7 +1120,7 @@ function apiRemovePart(p) {
 }
 
 /**
- * Changes one bag in place — its freezer, date, size or note. Everything the
+ * Changes one bag in place — its store, date, size or note. Everything the
  * app can set on the way in can be corrected afterwards, so a mistake never
  * has to be fixed by deleting and re-adding.
  */
@@ -1098,11 +1129,11 @@ function apiEditLot(p) {
     DB.ensure();
     const id = txt(p && p.id);
     const lot = DB.getAll('Inventory').filter(function (r) { return txt(r.ID) === id; })[0];
-    if (!lot) throw new Error('That bag is no longer in the freezer.');
+    if (!lot) throw new Error('That bag is no longer in the store.');
 
     const src = (p && p.patch) || {};
     const patch = {};
-    if ('freezer' in src) patch.Freezer = txt(src.freezer);
+    if ('store' in src) patch.Store = txt(src.store);
     if ('weightG' in src) patch['Weight (g)'] = Math.max(0, Math.round(num(src.weightG))) || '';
     if ('count' in src) patch.Count = Math.max(0, Math.round(num(src.count))) || '';
     if ('unit' in src) patch.Unit = txt(src.unit);
@@ -1114,7 +1145,7 @@ function apiEditLot(p) {
     if (num(after('Weight (g)')) <= 0 && num(after('Count')) <= 0) {
       throw new Error('A bag needs a weight, or how many pieces are in it.');
     }
-    if (!txt(after('Freezer'))) throw new Error('Please choose which freezer it is in.');
+    if (!txt(after('Store'))) throw new Error('Please choose which store it is in.');
 
     const before = {};
     Object.keys(patch).forEach(function (k) { before[k] = lot[k]; });
@@ -1139,7 +1170,7 @@ function apiSplitLot(p) {
     const id = txt(p && p.id);
     const into = Math.round(num(p && p.into));
     const lot = DB.getAll('Inventory').filter(function (r) { return txt(r.ID) === id; })[0];
-    if (!lot) throw new Error('That bag is no longer in the freezer.');
+    if (!lot) throw new Error('That bag is no longer in the store.');
     if (into < 2 || into > 99) throw new Error('Choose between 2 and 99 bags.');
 
     const haveW = Math.round(num(lot['Weight (g)']));
@@ -1165,7 +1196,7 @@ function apiSplitLot(p) {
         ID: newId('L'),
         Item: txt(lot.Item),
         Category: txt(lot.Category),
-        Freezer: txt(lot.Freezer),
+        Store: txt(lot.Store),
         'Weight (g)': (weights[i] || 0) || '',
         'Date In': normDate(lot['Date In']),
         Note: txt(lot.Note),
@@ -1362,7 +1393,7 @@ function apiUndo(handle) {
           ID: txt(r.ID),
           Item: txt(r.Item),
           Category: txt(r.Category),
-          Freezer: txt(r.Freezer),
+          Store: txt(r.Store),
           'Weight (g)': Math.round(num(r['Weight (g)'])) || '',
           'Date In': normDate(r['Date In']),
           Note: txt(r.Note),
@@ -1377,7 +1408,7 @@ function apiUndo(handle) {
 
     if (token.type === 'part') {
       const lot = DB.getAll('Inventory').filter(function (r) { return txt(r.ID) === txt(token.id); })[0];
-      if (!lot) throw new Error('That bag is no longer in the freezer.');
+      if (!lot) throw new Error('That bag is no longer in the store.');
       DB.updateById('Inventory', txt(token.id), {
         'Weight (g)': Math.round(num(lot['Weight (g)'])) + Math.round(num(token.weightG)) || '',
         Count: Math.round(num(lot.Count)) + Math.round(num(token.count)) || '',

@@ -1,6 +1,6 @@
 /* ==========================================================================
-   Freezer Log — tablet-first, large-type interface.
-   Everything is sized for a finger on a tablet propped next to a freezer.
+   Pantry Cache — tablet-first, large-type interface.
+   Everything is sized for a finger on a tablet propped next to a store.
    ========================================================================== */
 
 :root {
@@ -360,7 +360,7 @@ button, input, select, textarea {
 }
 
 /*
- * The spreadsheet holds one colour per freezer, chosen to look right on the
+ * The spreadsheet holds one colour per store, chosen to look right on the
  * light theme. On the dark theme it is lightened here, the same way the built-in
  * palette shifts (accent #0d6ec9 -> #4f9df2) — so a colour only has to be picked
  * once, and cannot end up illegible on one theme or the other.
@@ -375,7 +375,7 @@ button, input, select, textarea {
 
   /* The tint has to be mixed against the dark surface, not the light one, or
      a badge that reads as a faint wash on white reads as mud here. */
-  .badge-freezer {
+  .badge-store {
     background: color-mix(in oklab, var(--fz, var(--ink-3)) 22%, var(--surface-3));
     box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--fz, var(--ink-3)) 40%, transparent);
   }
@@ -754,10 +754,10 @@ button, input, select, textarea {
 }
 
 .badge-warm { background: var(--warm-soft); color: var(--warm); }
-/* Every freezer badge used to be the same neutral grey, so the colour the
-   Freezers tab asks for showed only as a dot. A tint makes the column earn
+/* Every store badge used to be the same neutral grey, so the colour the
+   Stores tab asks for showed only as a dot. A tint makes the column earn
    its place — and the colour is validated server-side, so it is safe here. */
-.badge-freezer {
+.badge-store {
   background: color-mix(in srgb, var(--fz, var(--ink-3)) 14%, var(--surface-3));
   color: var(--ink-2);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fz, var(--ink-3)) 30%, transparent);
@@ -814,7 +814,7 @@ button, input, select, textarea {
 
 .seg-btn.is-on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
 
-/* --------------------------------------------------------- freezer cards */
+/* --------------------------------------------------------- store cards */
 
 .group-head {
   display: flex;

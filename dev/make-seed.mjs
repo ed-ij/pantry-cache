@@ -5,13 +5,13 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-const FREEZERS = [
-  { Name: 'Kitchen', Where: 'Fridge-freezer, top drawer', Colour: '#2f7fd0' },
-  { Name: 'Garage', Where: 'Big chest freezer', Colour: '#2c8f68' },
+const STORES = [
+  { Name: 'Kitchen', Where: 'Fridge-store, top drawer', Colour: '#2f7fd0' },
+  { Name: 'Garage', Where: 'Big chest store', Colour: '#2c8f68' },
   { Name: 'Utility', Where: 'Upright by the back door', Colour: '#c0632a' },
 ];
 
-// [name, category, weight, freezers, months, count, pieces, unit]
+// [name, category, weight, stores, months, count, pieces, unit]
 const CATALOGUE = [
   ['Raspberries', 'Fruit', 500, ['Garage', 'Kitchen'], ['2025-07', '2025-08', '2026-07'], 6],
   ['Blackcurrants', 'Fruit', 500, ['Garage'], ['2025-07', '2026-07'], 5],
@@ -46,7 +46,7 @@ const inventory = [];
 const history = [];
 const items = [];
 
-CATALOGUE.forEach(([name, category, weight, freezers, months, count, pieces, unit]) => {
+CATALOGUE.forEach(([name, category, weight, stores, months, count, pieces, unit]) => {
   items.push({
     Item: name, Category: category, 'Typical weight (g)': weight || '',
     'Typical count': pieces || '', Unit: unit || '',
@@ -54,9 +54,9 @@ CATALOGUE.forEach(([name, category, weight, freezers, months, count, pieces, uni
   for (let i = 0; i < count; i++) {
     const month = months[i % months.length];
     const day = String(3 + ((i * 7) % 24)).padStart(2, '0');
-    const freezer = freezers[i % freezers.length];
+    const store = stores[i % stores.length];
     inventory.push({
-      ID: id(), Item: name, Category: category, Freezer: freezer,
+      ID: id(), Item: name, Category: category, Store: store,
       'Weight (g)': weight || '', 'Date In': `${month}-${day}`, Note: '',
       Count: pieces || '', Unit: unit || '',
     });
@@ -64,7 +64,7 @@ CATALOGUE.forEach(([name, category, weight, freezers, months, count, pieces, uni
   // A couple of things already used up, so History is not empty.
   if (count > 4) {
     history.push({
-      ID: id(), Item: name, Category: category, Freezer: freezers[0],
+      ID: id(), Item: name, Category: category, Store: stores[0],
       'Weight (g)': weight || '', 'Date In': `${months[0]}-05`, 'Date Out': '2026-08-02', Note: '',
       Count: pieces || '', Unit: unit || '',
     });
@@ -73,7 +73,7 @@ CATALOGUE.forEach(([name, category, weight, freezers, months, count, pieces, uni
 
 await writeFile(
   join(HERE, 'seed.json'),
-  JSON.stringify({ Freezers: FREEZERS, Items: items, Inventory: inventory, History: history }, null, 2),
+  JSON.stringify({ Stores: STORES, Items: items, Inventory: inventory, History: history }, null, 2),
 );
 
 console.log(`seed.json: ${inventory.length} bags in stock, ${history.length} used up.`);

@@ -1,5 +1,5 @@
 <!--
-  The dialog shown from the spreadsheet's Freezer Log menu.
+  The dialog shown from the spreadsheet's Pantry Cache menu.
 
   Its job is the one step a non-technical person cannot do alone: turning a
   copied spreadsheet into a working web app. The server substitutes the
@@ -80,7 +80,7 @@
 
   function deployed() {
     return '' +
-      '<h1>Your Freezer Log is live</h1>' +
+      '<h1>Your Pantry Cache is live</h1>' +
       '<p class="muted">This is the address of <em>your</em> copy. It reads and writes only ' +
       'your own spreadsheet.</p>' +
       '<div class="url" id="url">' + esc(APP_URL) + '</div>' +
@@ -92,7 +92,7 @@
       'Email the link to yourself, open it on the device, then use the browser\'s ' +
       '<em>Add to Home screen</em>. It then opens like an app, full screen.</p>' +
       '<div class="note">Treat this link like a key. Anyone who has it can see and ' +
-      'change your freezer list without signing in. Share it only with people you ' +
+      'change your store list without signing in. Share it only with people you ' +
       'would let edit the spreadsheet itself.</div>';
   }
 
@@ -130,7 +130,7 @@
       : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     return '<p class="muted" style="margin-top:18px;font-size:12.5px">' +
       'This copy was built ' + esc(when) + '. ' +
-      'Use <em>Freezer Log &rarr; Check for updates</em> to see if there is a newer one.</p>';
+      'Use <em>Pantry Cache &rarr; Check for updates</em> to see if there is a newer one.</p>';
   }
 
   document.getElementById('root').innerHTML =

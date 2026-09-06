@@ -139,13 +139,13 @@ function load(spreadsheet) {
   `)(...names.map((n) => globals[n]));
 }
 
-const INV = ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit', 'Month only'];
+const INV = ['ID', 'Item', 'Category', 'Store', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit', 'Month only'];
 
 /* ============================ 1. the columns are where they were ======= */
 {
   const ss = makeSpreadsheet({
     Inventory: [INV, ['L1', 'Raspberries', 'Fruit', 'Kitchen', 500, '2026-07-01', 'top bed', '', '', '']],
-    History: [], Items: [], Freezers: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '#5F8A20']],
+    History: [], Items: [], Stores: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '#5F8A20']],
   });
   const B = load(ss);
   const rows = B.DB.getAll('Inventory');
@@ -158,10 +158,10 @@ const INV = ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note
 {
   // She has added her own "Picked by" column at position 3. Every value after
   // it is now one place to the right of where TABLES says it is.
-  const shifted = ['ID', 'Item', 'Picked by', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit', 'Month only'];
+  const shifted = ['ID', 'Item', 'Picked by', 'Category', 'Store', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit', 'Month only'];
   const ss = makeSpreadsheet({
     Inventory: [shifted, ['L1', 'Raspberries', 'Mum', 'Fruit', 'Kitchen', 500, '2026-07-01', 'top bed', '', '', '']],
-    History: [], Items: [], Freezers: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '#5F8A20']],
+    History: [], Items: [], Stores: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '#5F8A20']],
   });
   const B = load(ss);
 
@@ -188,14 +188,14 @@ const INV = ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note
 
 /* ============================ 3. writing goes under the right header === */
 {
-  const shifted = ['ID', 'Item', 'Picked by', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit', 'Month only'];
+  const shifted = ['ID', 'Item', 'Picked by', 'Category', 'Store', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit', 'Month only'];
   const ss = makeSpreadsheet({
     Inventory: [shifted],
-    History: [], Items: [], Freezers: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '#5F8A20']],
+    History: [], Items: [], Stores: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '#5F8A20']],
   });
   const B = load(ss);
   B.apiAdd({
-    item: 'Damsons', category: 'Fruit', freezer: 'Kitchen',
+    item: 'Damsons', category: 'Fruit', store: 'Kitchen',
     weightG: 750, qty: 1, dateIn: '2026-08-01', note: 'hedge',
   });
   const row = ss.getSheetByName('Inventory')._cells[1];
@@ -210,10 +210,10 @@ const INV = ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note
 {
   // An older sheet, from before "Month only" existed. Constraint 9 says new
   // columns are appended, so every existing value must stay put.
-  const older = ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit'];
+  const older = ['ID', 'Item', 'Category', 'Store', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit'];
   const ss = makeSpreadsheet({
     Inventory: [older, ['L1', 'Peas', 'Vegetables', 'Kitchen', 400, '2026-07-01', '', '', '']],
-    History: [], Items: [], Freezers: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '#5F8A20']],
+    History: [], Items: [], Stores: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '#5F8A20']],
   });
   const B = load(ss);
   B.DB.ensure(true);
@@ -233,7 +233,7 @@ const INV = ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note
       ['L1', 'Rhubarb', 'Fruit', 'Kitchen', '1.5kg', '3/9/25', '', '', '', ''],
       ['L2', 'Plums', 'Fruit', 'Kitchen', '2 x 500', '2025-13-45', '', '', '', ''],
     ],
-    History: [], Items: [], Freezers: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '#5F8A20']],
+    History: [], Items: [], Stores: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '#5F8A20']],
   });
   const B = load(ss);
   const st = B.apiGetState();
@@ -249,15 +249,15 @@ const INV = ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note
   assert.ok(st.problems.some((p) => p.field === 'Date In' && p.raw === '2025-13-45'));
 }
 
-/* ============================ 6. a bad freezer colour falls back ======= */
+/* ============================ 6. a bad store colour falls back ======= */
 {
   const ss = makeSpreadsheet({
     Inventory: [INV], History: [], Items: [],
     // The hash left off — which the README invites by asking for hex codes.
-    Freezers: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '2f7fd0'], ['Shed', 'out back', '#B53464']],
+    Stores: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '2f7fd0'], ['Shed', 'out back', '#B53464']],
   });
   const B = load(ss);
-  const fz = B.apiGetState().freezers;
+  const fz = B.apiGetState().stores;
   assert.ok(/^#[0-9a-f]{6}$/i.test(fz[0].colour), 'an invalid colour falls back to the palette');
   assert.equal(fz[1].colour, '#B53464', 'a valid one is kept');
 }
@@ -270,7 +270,7 @@ const INV = ['ID', 'Item', 'Category', 'Freezer', 'Weight (g)', 'Date In', 'Note
   }
   const ss = makeSpreadsheet({
     Inventory: rows, History: [], Items: [],
-    Freezers: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '#5F8A20']],
+    Stores: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '#5F8A20']],
   });
   const B = load(ss);
   calls.deleteRow = 0;

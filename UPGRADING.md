@@ -3,7 +3,7 @@
 Copies created from the original instructions have no way to ask whether there
 is a newer version — the update mechanism is itself part of the update. So the
 first upgrade is done by hand, once. Afterwards it is
-**Freezer Log → Check for updates**, and this document stops applying.
+**Pantry Cache → Check for updates**, and this document stops applying.
 
 About ten minutes, and the spreadsheet is never at risk.
 
@@ -24,6 +24,24 @@ backfilling.
 > which silently made an inserted column permanent. The new code appends what
 > is missing and refuses out loud if anything else is wrong. That is the
 > change that makes this step safe.
+
+**The app is renamed, and so are one tab and one column.** Nothing about this
+app was ever specific to freezing — it is equally a pantry, a cellar or a spare
+fridge — so *Freezer Log* is now **Pantry Cache**, the `Freezers` tab is
+`Stores`, and the `Freezer` column in `Inventory` and `History` is `Store`.
+
+The renaming is done for you, in place, the first time the new code touches the
+sheet. Your rows are not rewritten: the tab keeps its contents and the column
+keeps its values, only the names on them change.
+
+> This is why it is done *for* you rather than left as an instruction. The
+> header check appends whatever is missing, so a sheet left to itself would
+> gain an empty `Store` column beside the full `Freezer` one and quietly orphan
+> every value in it. Renaming in place keeps the data attached to its column.
+>
+> If you would rather see it happen before anything else does, the migration is
+> idempotent — running **Set up / repair sheets** twice changes nothing the
+> second time.
 
 **The permissions get narrower, and gain one.** The script previously asked for
 access to every spreadsheet you own; it now asks only for the one it is bound
@@ -97,17 +115,17 @@ Save.
 
 ## 3. Reload the spreadsheet
 
-Not the script editor — the spreadsheet tab. The **Freezer Log** menu is built
+Not the script editor — the spreadsheet tab. The **Pantry Cache** menu is built
 when the sheet opens, so the new **Check for updates** item only appears after
 a reload.
 
 ## 4. Authorise the new permissions
 
-Run **Freezer Log → Set up / repair sheets**.
+Run **Pantry Cache → Set up / repair sheets**.
 
 Google will ask you to approve the script again, because the permissions
 changed in step 2. It shows the "Google hasn't verified this app" warning:
-**Advanced → Go to Freezer Log (unsafe)**. This is your own script in your own
+**Advanced → Go to Pantry Cache (unsafe)**. This is your own script in your own
 account, and the warning is what Google shows for any script it has not put
 through review.
 
@@ -132,7 +150,7 @@ the old code, and the tablet carries on talking to the old one.
 
 ## Checking it worked
 
-**Freezer Log → Open the app / get my link** shows a build stamp at the bottom.
+**Pantry Cache → Open the app / get my link** shows a build stamp at the bottom.
 It should match the `build` field in `latest.json` on `main`. If it still shows
 the old date, the deployment did not take — go back to step 5.
 
@@ -168,11 +186,11 @@ deployment.
 
 ## After this
 
-Never again. **Freezer Log → Check for updates** compares the copy's build
+Never again. **Pantry Cache → Check for updates** compares the copy's build
 stamp against `latest.json` in the repository, shows what changed, and hands
 over each file to paste in order. The only manual step left is
 **Deploy → Manage deployments → ✏️ → New version**, which Apps Script does not
 allow a script to do for itself.
 
 Nothing is ever pulled automatically, so a bad release cannot reach anyone's
-freezer list on its own. See [SHARING.md](SHARING.md) for publishing one.
+store list on its own. See [SHARING.md](SHARING.md) for publishing one.

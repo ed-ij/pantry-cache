@@ -34,8 +34,8 @@ const DB = {
     Object.keys(B.TABLES).forEach((name) => {
       if (!store[name]) store[name] = [];
     });
-    if (!store.Freezers.filter((r) => String(r.Name || '').trim()).length) {
-      DB.append('Freezers', B.SEED_FREEZERS);
+    if (!store.Stores.filter((r) => String(r.Name || '').trim()).length) {
+      DB.append('Stores', B.SEED_STORES);
     }
   },
 
@@ -111,7 +111,7 @@ const DB = {
 function loadBackend() {
   const code = readFileSync(join(SRC, 'backend.js'), 'utf8');
   const factory = new Function('DB', `${code}
-    return { TABLES, DATE_COLUMNS, SEED_FREEZERS, apiGetState, apiAdd, apiRemove, apiRemovePart, apiUndo,
+    return { TABLES, DATE_COLUMNS, SEED_STORES, apiGetState, apiAdd, apiRemove, apiRemovePart, apiUndo,
              apiEditLot, apiSplitLot, apiRenameItem, apiRenameCategory };`);
   return factory(DB);
 }
@@ -220,6 +220,6 @@ DB.ensure();
 await saveStore();
 
 server.listen(PORT, () => {
-  console.log(`Freezer Log dev server: http://localhost:${PORT}`);
+  console.log(`Pantry Cache dev server: http://localhost:${PORT}`);
   console.log(`Data file: ${DATA} (delete it to reset to dev/seed.json)`);
 });

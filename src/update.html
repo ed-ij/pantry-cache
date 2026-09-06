@@ -7,7 +7,7 @@
   whether there is anything newer, what changed, and hands over each file ready
   to copy, in the order they need pasting.
 
-  It never writes anything itself. Nothing here can change the freezer list.
+  It never writes anything itself. Nothing here can change the store list.
 -->
 <style>
   :root { color-scheme: light dark; }
@@ -173,7 +173,7 @@
     root.innerHTML =
       '<h1>There is a newer version</h1>' +
       '<p class="muted">Nothing has changed yet. Updating means copying each file below into the ' +
-      'script editor, in order, then publishing. Your freezer list is not touched.</p>' +
+      'script editor, in order, then publishing. Your store list is not touched.</p>' +
       stamp +
       (st.notes ? '<div class="note">' + esc(st.notes) + '</div>' : '') +
       '<ol>' +

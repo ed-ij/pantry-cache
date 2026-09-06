@@ -12,7 +12,7 @@ const store = {};
 const DB = {
   ensure() {
     Object.keys(B.TABLES).forEach((n) => { if (!store[n]) store[n] = []; });
-    if (!store.Freezers.length) DB.append('Freezers', B.SEED_FREEZERS);
+    if (!store.Stores.length) DB.append('Stores', B.SEED_STORES);
   },
   today: () => '2026-08-19',
   sheetUrl: () => '',
@@ -64,7 +64,7 @@ const DB = {
 
 const code = readFileSync(join(SRC, 'backend.js'), 'utf8');
 B = new Function('DB', `${code}
-  return { TABLES, SEED_FREEZERS, apiGetState, apiAdd, apiRemove, apiRemovePart, apiUndo,
+  return { TABLES, SEED_STORES, apiGetState, apiAdd, apiRemove, apiRemovePart, apiUndo,
            apiEditLot, apiSplitLot, apiRenameItem, apiRenameCategory };`)(DB);
 
 const stock = () => B.apiGetState().inventory;
@@ -74,17 +74,17 @@ const total = () => stock().reduce((t, l) => t + l.weightG, 0);
 /* --- empty sheet --- */
 let st = B.apiGetState();
 assert.equal(st.inventory.length, 0, 'starts empty');
-assert.equal(st.freezers.length, 2, 'seeds two example freezers');
+assert.equal(st.stores.length, 2, 'seeds two example stores');
 assert.ok(st.categories.includes('Fruit'), 'offers default categories');
 
 /* --- adding --- */
-const add = B.apiAdd({ item: 'raspberries', category: 'Fruit', freezer: 'Garage', weightG: 500, qty: 3, dateIn: '2026-07-04' });
+const add = B.apiAdd({ item: 'raspberries', category: 'Fruit', store: 'Garage', weightG: 500, qty: 3, dateIn: '2026-07-04' });
 assert.equal(add.lots.length, 3, 'three bags created');
 assert.equal(total(), 1500);
 assert.equal(store.Items.length, 1, 'new item added to the catalogue');
 assert.equal(store.Items[0].Item, 'Raspberries', 'name tidied on the way in');
 
-B.apiAdd({ item: 'Raspberries', category: 'Fruit', freezer: 'Garage', weightG: 500, qty: 1 });
+B.apiAdd({ item: 'Raspberries', category: 'Fruit', store: 'Garage', weightG: 500, qty: 1 });
 assert.equal(store.Items.length, 1, 'known item not duplicated in the catalogue');
 assert.ok(stock().every((l) => l.dateIn), 'every bag has a date');
 
@@ -129,14 +129,14 @@ B.apiUndo(add.undo);
 assert.equal(total(), 500, 'the three original bags are gone');
 
 /* --- validation --- */
-assert.throws(() => B.apiAdd({ item: '', freezer: 'Garage', weightG: 100 }), /what you are freezing/);
-assert.throws(() => B.apiAdd({ item: 'Peas', freezer: '', weightG: 100 }), /which freezer/);
-assert.throws(() => B.apiAdd({ item: 'Peas', freezer: 'Garage', weightG: 0 }), /enter a weight/);
+assert.throws(() => B.apiAdd({ item: '', store: 'Garage', weightG: 100 }), /what you are freezing/);
+assert.throws(() => B.apiAdd({ item: 'Peas', store: '', weightG: 100 }), /which store/);
+assert.throws(() => B.apiAdd({ item: 'Peas', store: 'Garage', weightG: 0 }), /enter a weight/);
 assert.throws(() => B.apiRemove({ ids: [] }), /Nothing selected/);
-assert.throws(() => B.apiRemove({ ids: ['nope'] }), /no longer in the freezer/);
+assert.throws(() => B.apiRemove({ ids: ['nope'] }), /no longer in the store/);
 
 /* --- weights are kept exactly as entered --- */
-const odd = B.apiAdd({ item: 'Plums', category: 'Fruit', freezer: 'Garage', weightG: 447, qty: 1 });
+const odd = B.apiAdd({ item: 'Plums', category: 'Fruit', store: 'Garage', weightG: 447, qty: 1 });
 assert.equal(odd.lots[0].weightG, 447, '447 g stays 447 g');
 
 const oddPart = B.apiRemovePart({ id: odd.lots[0].id, weightG: 123 });
@@ -146,7 +146,7 @@ B.apiUndo(odd.undo);
 
 /* --- counted bags: sweetcorn on the cob --- */
 const corn = B.apiAdd({
-  item: 'Sweetcorn', category: 'Vegetables', freezer: 'Garage',
+  item: 'Sweetcorn', category: 'Vegetables', store: 'Garage',
   weightG: 900, count: 6, unit: 'cobs', qty: 2, dateIn: '2026-08-01',
 });
 assert.equal(corn.lots[0].count, 6, 'count recorded');
@@ -155,11 +155,11 @@ assert.equal(store.Items.find((r) => r.Item === 'Sweetcorn').Unit, 'cobs', 'unit
 assert.equal(store.Items.find((r) => r.Item === 'Sweetcorn')['Typical count'], 6);
 
 /* a count with no weight at all */
-const noWeigh = B.apiAdd({ item: 'Globe artichokes', category: 'Vegetables', freezer: 'Garage', count: 4, unit: 'heads' });
+const noWeigh = B.apiAdd({ item: 'Globe artichokes', category: 'Vegetables', store: 'Garage', count: 4, unit: 'heads' });
 assert.equal(noWeigh.lots[0].weightG, 0, 'no weight is fine when there is a count');
 assert.equal(noWeigh.lots[0].count, 4);
 assert.throws(
-  () => B.apiAdd({ item: 'Peas', category: 'Vegetables', freezer: 'Garage' }),
+  () => B.apiAdd({ item: 'Peas', category: 'Vegetables', store: 'Garage' }),
   /weight, or how many/, 'one measure or the other is required',
 );
 
@@ -186,26 +186,26 @@ B.apiUndo(noWeigh.undo);
 B.apiUndo(corn.undo);
 
 /* --- correcting a bag rather than deleting it --- */
-const fix = B.apiAdd({ item: 'Kale', category: 'Vegetables', freezer: 'Garage', weightG: 300, qty: 1, dateIn: '2026-01-05' });
+const fix = B.apiAdd({ item: 'Kale', category: 'Vegetables', store: 'Garage', weightG: 300, qty: 1, dateIn: '2026-01-05' });
 const fixId = fix.lots[0].id;
-const edited = B.apiEditLot({ id: fixId, patch: { freezer: 'Kitchen', dateIn: '2025-11-20', weightG: 320, note: 'top bed' } });
-assert.equal(edited.lot.freezer, 'Kitchen');
+const edited = B.apiEditLot({ id: fixId, patch: { store: 'Kitchen', dateIn: '2025-11-20', weightG: 320, note: 'top bed' } });
+assert.equal(edited.lot.store, 'Kitchen');
 assert.equal(edited.lot.dateIn, '2025-11-20');
 assert.equal(edited.lot.weightG, 320);
 assert.equal(edited.lot.note, 'top bed');
 
 B.apiUndo(edited.undo);
 const back = stock().find((l) => l.id === fixId);
-assert.equal(back.freezer, 'Garage', 'edit undone');
+assert.equal(back.store, 'Garage', 'edit undone');
 assert.equal(back.dateIn, '2026-01-05');
 assert.equal(back.weightG, 300);
 
 assert.throws(() => B.apiEditLot({ id: fixId, patch: { weightG: 0 } }), /weight, or how many/);
-assert.throws(() => B.apiEditLot({ id: fixId, patch: { freezer: '' } }), /which freezer/);
+assert.throws(() => B.apiEditLot({ id: fixId, patch: { store: '' } }), /which store/);
 B.apiUndo(fix.undo);
 
 /* --- splitting one tub of blocks into single blocks --- */
-const tub = B.apiAdd({ item: 'Ratatouille', category: 'Prepared', freezer: 'Garage', weightG: 1000, count: 8, unit: 'blocks', qty: 1 });
+const tub = B.apiAdd({ item: 'Ratatouille', category: 'Prepared', store: 'Garage', weightG: 1000, count: 8, unit: 'blocks', qty: 1 });
 const tubId = tub.lots[0].id;
 const split = B.apiSplitLot({ id: tubId, into: 8 });
 assert.equal(split.lots.length, 8, 'eight bags out of one');
@@ -231,10 +231,10 @@ assert.throws(() => B.apiSplitLot({ id: tubId, into: 1 }), /between 2 and 99/);
 B.apiUndo(tub.undo);
 
 /* --- renaming an item everywhere it appears --- */
-const fb = B.apiAdd({ item: 'French beans', category: 'Vegetables', freezer: 'Garage', weightG: 400, qty: 3 });
+const fb = B.apiAdd({ item: 'French beans', category: 'Vegetables', store: 'Garage', weightG: 400, qty: 3 });
 const gone = B.apiRemove({ ids: [stock().find((l) => l.item === 'French beans').id] });
 const ren = B.apiRenameItem({ from: 'French beans', to: 'French beans (green)' });
-assert.equal(ren.renamed, 3, 'two in the freezer and one in history');
+assert.equal(ren.renamed, 3, 'two in the store and one in history');
 assert.equal(stock().filter((l) => l.item === 'French beans (green)').length, 2);
 assert.equal(store.History.filter((r) => r.Item === 'French beans (green)').length, 1);
 assert.equal(store.Items.filter((r) => r.Item === 'French beans (green)').length, 1, 'catalogue follows');
@@ -244,7 +244,7 @@ B.apiUndo(ren.undo);
 assert.equal(stock().filter((l) => l.item === 'French beans').length, 2, 'rename undone');
 
 /* renaming onto a name that already exists merges the catalogue entries */
-B.apiAdd({ item: 'Runner beans', category: 'Vegetables', freezer: 'Garage', weightG: 400, qty: 1 });
+B.apiAdd({ item: 'Runner beans', category: 'Vegetables', store: 'Garage', weightG: 400, qty: 1 });
 B.apiRenameItem({ from: 'French beans', to: 'Runner beans' });
 assert.equal(store.Items.filter((r) => keyish(r.Item) === 'runner beans').length, 1, 'no duplicate catalogue row');
 assert.throws(() => B.apiRenameItem({ from: 'Nothing here', to: 'X' }), /to rename/);
@@ -260,7 +260,7 @@ B.apiRemove({ ids: stock().filter((l) => l.item === 'Runner beans').map((l) => l
 
 /* --- hand-edited sheet: a row typed straight in, with a UK date --- */
 DB.append('Inventory', [{
-  ID: 'HAND1', Item: 'Damsons', Category: 'Fruit', Freezer: 'Garage',
+  ID: 'HAND1', Item: 'Damsons', Category: 'Fruit', Store: 'Garage',
   'Weight (g)': '750', 'Date In': '03/09/2025', Note: 'from the hedge',
 }]);
 st = B.apiGetState();
@@ -288,7 +288,7 @@ fresh();
 for (let trial = 0; trial < 200; trial++) {
   store.Inventory = [];
   B.apiAdd({
-    item: 'Raspberries', category: 'Fruit', freezer: 'Kitchen',
+    item: 'Raspberries', category: 'Fruit', store: 'Kitchen',
     weightG: 500, qty: 99, dateIn: '2026-08-01',
   });
   const ids = store.Inventory.map((r) => r.ID);
@@ -298,7 +298,7 @@ for (let trial = 0; trial < 200; trial++) {
 /* --- D4: undoing an add whose bags were since split must refuse, not lie --- */
 fresh();
 const added2 = B.apiAdd({
-  item: 'Blackcurrants', category: 'Fruit', freezer: 'Kitchen',
+  item: 'Blackcurrants', category: 'Fruit', store: 'Kitchen',
   weightG: 800, qty: 1, dateIn: '2026-08-01',
 });
 B.apiSplitLot({ id: added2.lots[0].id, into: 4 });
@@ -313,7 +313,7 @@ assert.equal(stock().length, 4, 'D4: nothing was touched by the refused undo');
 /* --- D4: undoing a part2-removal after an edit must not add onto the new value --- */
 fresh();
 const corn2 = B.apiAdd({
-  item: 'Sweetcorn', category: 'Vegetables', freezer: 'Kitchen',
+  item: 'Sweetcorn', category: 'Vegetables', store: 'Kitchen',
   weightG: 900, count: 6, unit: 'cobs', qty: 1, dateIn: '2026-08-01',
 });
 const part2 = B.apiRemovePart({ id: corn2.lots[0].id, count: 2, dateOut: '2026-08-10' });
@@ -327,8 +327,8 @@ assert.equal(stock()[0].weightG, 100, 'D4: the edit survived the refused undo');
 
 /* --- D5: undoing a merged rename must not rename bags it never touched --- */
 fresh();
-B.apiAdd({ item: 'French beans', category: 'Vegetables', freezer: 'Kitchen', weightG: 300, qty: 2, dateIn: '2026-08-01' });
-B.apiAdd({ item: 'Runner beans', category: 'Vegetables', freezer: 'Kitchen', weightG: 300, qty: 3, dateIn: '2026-08-01' });
+B.apiAdd({ item: 'French beans', category: 'Vegetables', store: 'Kitchen', weightG: 300, qty: 2, dateIn: '2026-08-01' });
+B.apiAdd({ item: 'Runner beans', category: 'Vegetables', store: 'Kitchen', weightG: 300, qty: 3, dateIn: '2026-08-01' });
 const merged = B.apiRenameItem({ from: 'French beans', to: 'Runner beans' });
 assert.equal(stock().filter((l) => l.item === 'Runner beans').length, 5, 'D5: merge happened');
 assert.ok(merged.merged, 'D5: the merge is reported to the caller');
@@ -350,7 +350,7 @@ assert.throws(
 
 /* --- undoing an add takes the catalogue row it created with it --- */
 fresh();
-const typo = B.apiAdd({ item: 'Rasberries', category: 'Fruit', freezer: 'Kitchen', weightG: 500, qty: 1, dateIn: '2026-08-01' });
+const typo = B.apiAdd({ item: 'Rasberries', category: 'Fruit', store: 'Kitchen', weightG: 500, qty: 1, dateIn: '2026-08-01' });
 assert.ok(B.apiGetState().items.some((i) => i.name === 'Rasberries'), 'the typo is in the catalogue');
 B.apiUndo(typo.undo);
 assert.ok(
@@ -360,7 +360,7 @@ assert.ok(
 
 /* --- D3: an undo token the server never issued must be refused --- */
 fresh();
-const forged = B.apiAdd({ item: 'Figs', category: 'Fruit', freezer: 'Kitchen', weightG: 400, qty: 2, dateIn: '2026-08-01' });
+const forged = B.apiAdd({ item: 'Figs', category: 'Fruit', store: 'Kitchen', weightG: 400, qty: 2, dateIn: '2026-08-01' });
 assert.throws(
   () => B.apiUndo({ type: 'add', ids: stock().map((l) => l.id) }),
   /no longer be undone|cannot be undone/i,

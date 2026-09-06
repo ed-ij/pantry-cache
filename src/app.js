@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Freezer Log — client.
+   Pantry Cache — client.
 
    Talks to Apps Script via google.script.run when deployed, and to the local
    dev server over fetch when running `npm run dev`. Everything renders from a
@@ -15,7 +15,7 @@
 
 /**
  * Every sentence the backend throws is written for a person — "Please choose
- * which freezer it is going in". Anything else that reaches this point is not:
+ * which store it is going in". Anything else that reaches this point is not:
  * Google's own lock timeout ("Could not obtain lock after 20000ms"), a stack
  * trace from an unexpected exception, a transport failure with no message at
  * all. Constraint 3 exists to keep those off the screen, and they were the one
@@ -27,7 +27,7 @@
  */
 function translateError(raw) {
   var msg = String((raw && raw.message) || raw || '');
-  if (window.console && console.error) console.error('[freezer-log]', raw);
+  if (window.console && console.error) console.error('[pantry-cache]', raw);
 
   // Our own messages all end in a full stop and read as English. Google's do
   // not, and neither do transport failures — but rather than trying to
@@ -98,7 +98,7 @@ function todayISO() {
  * only used to notice that midnight has passed.
  *
  * It has to be noticed, because this app is meant to sit on a tablet left
- * switched on beside a freezer. Without it, `S.today` is whatever it was when
+ * switched on beside a store. Without it, `S.today` is whatever it was when
  * the page loaded: the morning's produce is stamped yesterday, the take-out
  * dates in History are wrong, and every "1 year 1 mth ago" is measured from a
  * stale point.
@@ -258,7 +258,7 @@ function groupBy(list, key) {
 
 var BLANK_DRAFT = {
   item: '', category: '', weightG: 500, count: 0, unit: '', qty: 1,
-  freezer: '', dateIn: '', monthOnly: false, note: '', showNote: false, showCount: false,
+  store: '', dateIn: '', monthOnly: false, note: '', showNote: false, showCount: false,
   // Constraint 6 says weights are stored exactly as entered. 500 g was entered
   // by nobody — it is a starting position, and until she touches the control it
   // is drawn as a suggestion and refuses to save.
@@ -296,7 +296,7 @@ var S = {
   ready: false,
   tab: 'add',
   today: todayISO(),
-  freezers: [],
+  stores: [],
   items: [],
   categories: [],
   inventory: [],
@@ -311,9 +311,9 @@ var S = {
   openCats: {},
 
   // One filter and one search across both tabs. They used to be four separate
-  // pieces of state, so filtering to the Shed in "In the freezers" and then
-  // tapping "Take out" silently put you back to all freezers.
-  freezer: 'all',
+  // pieces of state, so filtering to the Shed in "In store" and then
+  // tapping "Take out" silently put you back to all stores.
+  store: 'all',
   search: '',
   viewLimit: 60,
   open: {},
@@ -346,7 +346,7 @@ function done() {
 }
 
 /**
- * The sheet holds one colour per freezer. Rather than asking for a second one
+ * The sheet holds one colour per store. Rather than asking for a second one
  * that works on a dark background, the stored value is handed to CSS as a
  * custom property and the dark theme lightens it there — so whatever colour
  * gets typed into the spreadsheet stays legible either way.
@@ -355,14 +355,14 @@ function dot(colour) {
   return '<span class="dot" style="--fz:' + esc(colour) + '"></span>';
 }
 
-/** The freezer's name, tinted with its own colour rather than a neutral pill. */
-function freezerBadge(name) {
-  return '<span class="badge badge-freezer" style="--fz:' + esc(freezerColour(name)) + '">' +
-    dot(freezerColour(name)) + esc(name) + '</span>';
+/** The store's name, tinted with its own colour rather than a neutral pill. */
+function storeBadge(name) {
+  return '<span class="badge badge-store" style="--fz:' + esc(storeColour(name)) + '">' +
+    dot(storeColour(name)) + esc(name) + '</span>';
 }
 
-function freezerColour(name) {
-  var f = S.freezers.filter(function (x) { return x.name === name; })[0];
+function storeColour(name) {
+  var f = S.stores.filter(function (x) { return x.name === name; })[0];
   return f ? f.colour : 'var(--ink-3)';
 }
 
@@ -379,7 +379,7 @@ function toast(msg, undoToken, kind) {
 }
 
 /**
- * The spec names the scenario precisely: a freezer beyond wi-fi range. That
+ * The spec names the scenario precisely: a store beyond wi-fi range. That
  * tablet is still associated with the access point, so navigator.onLine reports
  * true and never fires. The old test also matched the fetch API's vocabulary —
  * "failed to fetch", "load failed" — which is the dev server's transport, not
@@ -481,7 +481,7 @@ function modalIsDirty() {
   if (m.kind === 'edit') {
     var l = lotById(m.id);
     if (!l) return false;
-    return m.freezer !== l.freezer || m.dateIn !== l.dateIn || m.weightG !== l.weightG ||
+    return m.store !== l.store || m.dateIn !== l.dateIn || m.weightG !== l.weightG ||
       m.count !== l.count || norm(m.unit) !== norm(l.unit || 'pieces') || m.note !== l.note;
   }
   if (m.kind === 'rename') return norm(tidyName(m.value)) !== norm(m.from);
@@ -505,7 +505,7 @@ function renderLoading() {
 
 function renderTopRight() {
   // lotsSize, not a bare weight sum: 42 cobs of sweetcorn with no weight were
-  // reported as 0, while the freezers view — using the same data — said "42
+  // reported as 0, while the stores view — using the same data — said "42
   // cobs". The number that is always on screen was the wrong one.
   var totals = lotsSize(S.inventory, true);
   var total = totals[0] === '\u2014' ? '0 g' : totals[0];
@@ -528,7 +528,7 @@ function renderTopRight() {
 
 var TABS = [
   { id: 'add', icon: '&#43;', label: 'Put in' },
-  { id: 'view', icon: '&#9776;', label: 'In the freezers' },
+  { id: 'view', icon: '&#9776;', label: 'In store' },
   { id: 'take', icon: '&#8722;', label: 'Take out' },
 ];
 
@@ -557,9 +557,9 @@ function renderPanel() {
 function renderLoadFailed() {
   return '<div class="stack">' +
     '<div class="banner" style="display:block">' +
-      '<div style="font-weight:700;font-size:1.05rem">The freezer list could not be fetched</div>' +
+      '<div style="font-weight:700;font-size:1.05rem">The store list could not be fetched</div>' +
       '<div style="margin-top:6px;font-weight:500">' +
-        'This is not the same as the freezers being empty &mdash; nothing has been read, ' +
+        'This is not the same as the stores being empty &mdash; nothing has been read, ' +
         'so nothing can be shown. Your spreadsheet is untouched.' +
       '</div>' +
     '</div>' +
@@ -596,7 +596,7 @@ function renderAddPick() {
   var q = S.query.trim();
   return '<div class="stack">' +
     '<div>' +
-      '<label class="label" for="q-item">What are you putting in the freezer?</label>' +
+      '<label class="label" for="q-item">What are you putting in the store?</label>' +
       '<input class="input input-hero" id="q-item" type="text" autocomplete="off" ' +
         'placeholder="Type a name&hellip;" value="' + esc(S.query) + '" data-act="query">' +
     '</div>' +
@@ -605,7 +605,7 @@ function renderAddPick() {
     '</div>';
 }
 
-/** One item as a grid tile: the name, and what is already in the freezers. */
+/** One item as a grid tile: the name, and what is already in store. */
 function itemTile(it) {
   var inStock = S.inventory.filter(function (l) { return norm(l.item) === norm(it.name); });
   var meta = inStock.length
@@ -680,17 +680,17 @@ function renderAddSearch(q) {
   return '<div class="tile-grid">' + newTile + matches.map(itemTile).join('') + '</div>';
 }
 
-function countFreezers(lots) {
+function countStores(lots) {
   var names = {};
-  lots.forEach(function (l) { names[l.freezer] = 1; });
+  lots.forEach(function (l) { names[l.store] = 1; });
   var list = Object.keys(names);
-  return list.length === 1 ? list[0] : list.length + ' freezers';
+  return list.length === 1 ? list[0] : list.length + ' stores';
 }
 
 function renderAddDetails() {
   var d = S.draft;
   var sized = (d.weightG > 0 && d.weightConfirmed) || (d.showCount && d.count > 0);
-  var canSave = d.item && d.freezer && sized && !S.busy;
+  var canSave = d.item && d.store && sized && !S.busy;
 
   // An unconfirmed weight must not light its chip up: a selected "500 g"
   // beside a readout saying it is a guess says two opposite things at once.
@@ -699,8 +699,8 @@ function renderAddDetails() {
     return '<button class="chip' + (on ? ' is-on' : '') + '" data-act="set-weight" data-g="' + g + '">' + fmtW(g) + '</button>';
   }).join('');
 
-  var freezerBtns = S.freezers.map(function (f) {
-    return '<button class="chip' + (d.freezer === f.name ? ' is-on' : '') + '" data-act="set-freezer" data-name="' + esc(f.name) + '">' +
+  var storeBtns = S.stores.map(function (f) {
+    return '<button class="chip' + (d.store === f.name ? ' is-on' : '') + '" data-act="set-store" data-name="' + esc(f.name) + '">' +
       dot(f.colour) + esc(f.name) + '</button>';
   }).join('');
 
@@ -770,9 +770,9 @@ function renderAddDetails() {
     '</div>' +
 
     '<div class="card">' +
-      '<span class="label">Which freezer?</span>' +
-      '<div class="chips">' + freezerBtns + '</div>' +
-      (S.freezers.length ? '' : '<div class="muted small" style="margin-top:8px">No freezers listed yet &mdash; add them on the <b>Freezers</b> tab of the spreadsheet.</div>') +
+      '<span class="label">Which store?</span>' +
+      '<div class="chips">' + storeBtns + '</div>' +
+      (S.stores.length ? '' : '<div class="muted small" style="margin-top:8px">No stores listed yet &mdash; add them on the <b>Stores</b> tab of the spreadsheet.</div>') +
     '</div>' +
 
     '<div class="card' + (backdated ? ' is-flagged' : '') + '">' +
@@ -798,9 +798,9 @@ function renderAddDetails() {
     '</div>' +
 
     '<button class="btn btn-primary btn-hero btn-block" data-act="save-add"' + (canSave ? '' : ' disabled') +
-      ' aria-label="Put ' + d.qty + ' of ' + esc(draftEach(d)) + ' ' + esc(d.item) + ' in the ' + esc(d.freezer) + ' freezer">' +
+      ' aria-label="Put ' + d.qty + ' of ' + esc(draftEach(d)) + ' ' + esc(d.item) + ' in the ' + esc(d.store) + ' store">' +
       (S.busy ? 'Saving&hellip;' :
-        '<span>Put in the ' + esc(d.freezer || '&hellip;') + ' freezer' +
+        '<span>Put in the ' + esc(d.store || '&hellip;') + ' store' +
         '<span class="btn-sub">' + esc(draftSummary(d)) + '</span></span>') +
     '</button>' +
 
@@ -892,30 +892,30 @@ function renderView() {
       stat(String(inv.length), inv.length === 1 ? 'Bag / tub' : 'Bags / tubs') +
       stat(String(Object.keys(kinds).length), 'Different things') +
     '</div>' +
-    freezerFilter('') +
-    searchBox('Search the freezers\u2026');
+    storeFilter('') +
+    searchBox('Search the stores\u2026');
 
   var body = inv.length
     ? renderByItem(inv)
-    : '<div class="empty"><span class="empty-mark">&#10052;</span>' +
-      (q || S.freezer !== 'all'
+    : '<div class="empty"><span class="empty-mark">&#128230;</span>' +
+      (q || S.store !== 'all'
         ? 'Nothing here matches.'
-        : 'The freezers are empty. Add something on the <b>Put in</b> tab.') +
+        : 'Nothing is stored yet. Add something on the <b>Put in</b> tab.') +
       '</div>';
 
   return head + body + renderRecentTakes() + renderSheetLink() + '</div>';
 }
 
-/** The freezer filter, shared by both tabs, with each chip carrying its total. */
-function freezerFilter(warm) {
+/** The store filter, shared by both tabs, with each chip carrying its total. */
+function storeFilter(warm) {
   var on = warm ? ' is-on-warm' : ' is-on';
   var allTotal = sum(S.inventory, function (l) { return l.weightG; });
   return '<div class="chips">' +
-    '<button class="chip' + (S.freezer === 'all' ? on : '') + '" data-act="set-freezer-filter" data-name="all">' +
-      'All freezers <span class="chip-num">' + esc(fmtW(allTotal)) + '</span></button>' +
-    S.freezers.map(function (f) {
-      var t = sum(S.inventory.filter(function (l) { return l.freezer === f.name; }), function (l) { return l.weightG; });
-      return '<button class="chip' + (S.freezer === f.name ? on : '') + '" data-act="set-freezer-filter" data-name="' + esc(f.name) + '">' +
+    '<button class="chip' + (S.store === 'all' ? on : '') + '" data-act="set-store-filter" data-name="all">' +
+      'All stores <span class="chip-num">' + esc(fmtW(allTotal)) + '</span></button>' +
+    S.stores.map(function (f) {
+      var t = sum(S.inventory.filter(function (l) { return l.store === f.name; }), function (l) { return l.weightG; });
+      return '<button class="chip' + (S.store === f.name ? on : '') + '" data-act="set-store-filter" data-name="' + esc(f.name) + '">' +
         dot(f.colour) + esc(f.name) +
         ' <span class="chip-num">' + esc(fmtW(t)) + '</span></button>';
     }).join('') +
@@ -928,10 +928,10 @@ function searchBox(placeholder) {
     'aria-label="' + esc(placeholder) + '" value="' + esc(S.search) + '" data-act="set-search">';
 }
 
-/** The inventory as both tabs see it: one freezer filter, one search. */
+/** The inventory as both tabs see it: one store filter, one search. */
 function filtered() {
   var inv = S.inventory;
-  if (S.freezer !== 'all') inv = inv.filter(function (l) { return l.freezer === S.freezer; });
+  if (S.store !== 'all') inv = inv.filter(function (l) { return l.store === S.store; });
   var q = norm(S.search);
   if (q) {
     inv = inv.filter(function (l) {
@@ -968,13 +968,13 @@ function renderProblems() {
 
 /**
  * The spreadsheet is the real database, so give it a visible door: this is how
- * you add a freezer, rename something, or fix a mistake the app cannot.
+ * you add a store, rename something, or fix a mistake the app cannot.
  */
 function renderSheetLink() {
   return '<div class="card">' +
     '<div class="card-title">Where all this is kept</div>' +
     '<p class="muted small" style="margin:6px 0 14px">Everything lives in a Google Sheet you can open like a spreadsheet. ' +
-    'That is where you add a new freezer, correct a date, or check back over past years.</p>' +
+    'That is where you add a new store, correct a date, or check back over past years.</p>' +
     (S.sheetUrl
       ? '<a class="btn btn-block" href="' + esc(S.sheetUrl) + '" target="_blank" rel="noopener">Open the spreadsheet</a>'
       : '<div class="muted small">(The link appears once the app is running from the spreadsheet.)</div>') +
@@ -995,7 +995,7 @@ function totalStat(lots) {
   var totals = lotsSize(lots, true);
   var weighed = lots.some(function (l) { return l.weightG > 0; });
   // Was: dropped to '' entirely at four or more measures, so with cobs,
-  // litres, blocks and boxes in the freezers the summary showed the weight and
+  // litres, blocks and boxes in store the summary showed the weight and
   // silently omitted the rest. Constraint 7 says not to add them up; that is
   // not a licence to hide them.
   var rest = totals.slice(1);
@@ -1006,14 +1006,14 @@ function totalStat(lots) {
 }
 
 function renderByItem(inv) {
-  var oneFreezer = S.freezer !== 'all';
+  var oneStore = S.store !== 'all';
   var byCat = groupBy(inv, function (l) { return l.category; });
 
   var sections = Object.keys(byCat).sort().map(function (cat) {
     var lots = byCat[cat];
     var byItem = groupBy(lots, function (l) { return l.item; });
     var rows = Object.keys(byItem).sort().map(function (item) {
-      return itemRow(byItem[item], 'i:' + cat + ':' + item, oneFreezer ? S.freezer : null);
+      return itemRow(byItem[item], 'i:' + cat + ':' + item, oneStore ? S.store : null);
     }).join('');
     // One figure only. A section header listing every unit gets long, and
     // "1 bag" as a unit reads confusingly next to "24 bags" as the tally, so
@@ -1033,18 +1033,18 @@ function renderByItem(inv) {
 }
 
 /** One expandable row: totals on top, individual bags underneath. */
-function itemRow(lots, key, freezerContext) {
+function itemRow(lots, key, storeContext) {
   var open = !!S.open[key];
   var totals = lotsSize(lots);
   var sorted = lots.slice().sort(byAge);
   var oldest = datedFirst(sorted)[0];
 
   var meta = lots.length + (lots.length === 1 ? ' bag' : ' bags');
-  if (!freezerContext) {
+  if (!storeContext) {
     var places = {};
-    lots.forEach(function (l) { places[l.freezer] = (places[l.freezer] || 0) + l.weightG; });
+    lots.forEach(function (l) { places[l.store] = (places[l.store] || 0) + l.weightG; });
     meta += ' &middot; ' + Object.keys(places).map(function (p) {
-      return freezerBadge(p);
+      return storeBadge(p);
     }).join(' ');
   }
 
@@ -1055,7 +1055,7 @@ function itemRow(lots, key, freezerContext) {
           '<span class="lot-date">' +
             (l.dateIn ? esc(fmtWhen(l)) + ' &middot; ' + esc(ageText(l.dateIn)) : 'date not recorded') +
           '</span>' +
-          (freezerContext ? '' : freezerBadge(l.freezer)) +
+          (storeContext ? '' : storeBadge(l.store)) +
           (l.dateIn && l === oldest && sorted.length > 1 ? '<span class="badge badge-warm">use first</span>' : '') +
           (l.note ? '<span class="lot-date">' + esc(l.note) + '</span>' : '') +
           '<span class="spacer"></span>' +
@@ -1083,7 +1083,7 @@ function itemRow(lots, key, freezerContext) {
 /**
  * Oldest first, grouped by month, with the bags you are taking selectable.
  *
- * This screen used to exist twice: "In the freezers → By age" rendered nearly
+ * This screen used to exist twice: "In store → By age" rendered nearly
  * the same list, sorted the same way, and opened the same removal dialog, with
  * different chrome and its own filter state. The month headings came from
  * there; the "use first" badges from here.
@@ -1120,13 +1120,13 @@ function renderTake() {
       '<div class="pick-row' + (on ? ' is-picked' : '') + '">' +
         '<button class="pick" data-act="toggle-pick" data-id="' + esc(l.id) + '" ' +
           'role="checkbox" aria-checked="' + on + '" ' +
-          'aria-label="' + esc(l.item + ', ' + lotSize(l) + ', ' + l.freezer + ' freezer') + '">' +
+          'aria-label="' + esc(l.item + ', ' + lotSize(l) + ', ' + l.store + ' store') + '">' +
           '<span class="pick-box" aria-hidden="true">' + (on ? '&#10003;' : '') + '</span>' +
           '<span class="row-main">' +
             '<span class="row-name">' + esc(l.item) +
               (first ? ' <span class="badge badge-warm">use first</span>' : '') + '</span>' +
-            '<span class="row-meta">' + freezerBadge(l.freezer) + ' ' +
-            (l.dateIn ? 'frozen ' + esc(fmtWhen(l)) + ' &middot; ' + esc(ageText(l.dateIn)) : 'date not recorded') +
+            '<span class="row-meta">' + storeBadge(l.store) + ' ' +
+            (l.dateIn ? 'put in ' + esc(fmtWhen(l)) + ' &middot; ' + esc(ageText(l.dateIn)) : 'date not recorded') +
             (l.note ? ' &middot; ' + esc(l.note) : '') + '</span>' +
           '</span>' +
           '<span class="row-right"><span class="row-strong">' + esc(lotSize(l)) + '</span></span>' +
@@ -1145,11 +1145,11 @@ function renderTake() {
       '<div class="card-head"><div class="card-title">Oldest first</div><div class="spacer"></div>' +
       '<div class="card-sub">tap what you are taking out</div></div>' + rows + '</div>' + more
     : '<div class="empty"><span class="empty-mark">&#128230;</span>' +
-      (S.inventory.length ? 'Nothing here matches.' : 'The freezers are empty.') + '</div>';
+      (S.inventory.length ? 'Nothing here matches.' : 'Nothing is stored yet.') + '</div>';
 
   return '<div class="stack">' +
-    freezerFilter('warm') +
-    searchBox('Search the freezers\u2026') +
+    storeFilter('warm') +
+    searchBox('Search the stores\u2026') +
     body +
     renderRecentTakes() +
     '</div>' +
@@ -1226,7 +1226,7 @@ function wrap(inner) {
 function modalGone() {
   return wrap(
     '<h2 class="modal-title">That bag has gone</h2>' +
-    '<p class="muted">It is no longer in the freezer &mdash; it may have been taken out ' +
+    '<p class="muted">It is no longer in the store &mdash; it may have been taken out ' +
     'on another device, or undone.</p>' +
     '<button class="btn btn-primary btn-block" style="margin-top:16px" data-act="refresh">Reload the list</button>'
   );
@@ -1312,7 +1312,7 @@ function modalKeypad(m) {
 function modalDate(m) {
   var months = [];
   var d = parseISO(S.today);
-  // Eighteen, not eight: produce is annual, and someone cataloguing a freezer
+  // Eighteen, not eight: produce is annual, and someone cataloguing a store
   // that has been filling up for two years is the normal first use of this app.
   for (var i = 1; i <= 18; i++) {
     var x = new Date(d.getFullYear(), d.getMonth() - i, 1);
@@ -1363,7 +1363,7 @@ function requireLot(id) {
   var lot = lotById(id);
   if (lot) return lot;
   setState({ modal: null });
-  toast('That bag is no longer in the freezer. Reloading\u2026', null, 'bad');
+  toast('That bag is no longer in the store. Reloading\u2026', null, 'bad');
   load(false);
   return null;
 }
@@ -1377,8 +1377,8 @@ function modalTake(m) {
   var splittable = l.count > 1 || l.weightG > 100 || (l.count === 1 && !l.weightG);
   return wrap(
     '<h2 class="modal-title">' + esc(l.item) + '</h2>' +
-    '<p class="muted" style="margin-top:0">' + esc(lotSize(l)) + ' in the ' + esc(l.freezer) + ' freezer' +
-      (l.dateIn ? ' &middot; frozen ' + esc(fmtWhen(l)) + ' (' + esc(ageText(l.dateIn)) + ')' : ' &middot; date not recorded') +
+    '<p class="muted" style="margin-top:0">' + esc(lotSize(l)) + ' in the ' + esc(l.store) + ' store' +
+      (l.dateIn ? ' &middot; put in ' + esc(fmtWhen(l)) + ' (' + esc(ageText(l.dateIn)) + ')' : ' &middot; date not recorded') +
       (l.note ? ' &middot; ' + esc(l.note) : '') + '</p>' +
     '<div class="stack" style="margin-top:18px">' +
       '<button class="btn btn-warm btn-hero btn-block" data-act="do-take" data-id="' + esc(l.id) + '">' +
@@ -1431,14 +1431,14 @@ function modalPart(m) {
     '<h2 class="modal-title">' +
       (counted ? 'How many of the ' + esc(fmtCount(l.count, l.unit)) + '?' : 'How much of the ' + esc(fmtW(l.weightG)) + '?') +
     '</h2>' +
-    '<p class="muted" style="margin-top:0">' + esc(l.item) + ' &middot; ' + esc(l.freezer) + ' freezer</p>' +
+    '<p class="muted" style="margin-top:0">' + esc(l.item) + ' &middot; ' + esc(l.store) + ' store</p>' +
     (chips ? '<div class="chips" style="margin:14px 0">' + chips + '</div>' : '') +
     stepControl(m.value, {
       steps: counted ? COUNT_STEPS : WEIGHT_STEPS,
       fmt: fmt, max: max, noun: counted ? 'pieces' : 'grams',
       bump: 'bump-part', type: 'type-part',
     }) +
-    '<p class="muted small" style="margin-top:12px">' + esc(leftOver) + ' would stay in the freezer.</p>' +
+    '<p class="muted small" style="margin-top:12px">' + esc(leftOver) + ' would stay in the store.</p>' +
     '<div class="row" style="margin-top:18px">' +
       '<button class="btn btn-ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
       '<button class="btn btn-warm" data-act="do-part" data-id="' + esc(l.id) + '">Take ' + esc(fmt(m.value)) + ' out</button>' +
@@ -1448,14 +1448,14 @@ function modalPart(m) {
 
 /**
  * Correcting one bag: everything that can be set on the way in can be put right
- * here, so a wrong date or freezer never means deleting and starting again.
+ * here, so a wrong date or store never means deleting and starting again.
  */
 function modalEdit(m) {
   var l = lotById(m.id);
   if (!l) return modalGone();
 
-  var freezers = S.freezers.map(function (f) {
-    return '<button class="chip' + (m.freezer === f.name ? ' is-on' : '') + '" data-act="edit-freezer" data-name="' + esc(f.name) + '">' +
+  var stores = S.stores.map(function (f) {
+    return '<button class="chip' + (m.store === f.name ? ' is-on' : '') + '" data-act="edit-store" data-name="' + esc(f.name) + '">' +
       dot(f.colour) + esc(f.name) + '</button>';
   }).join('');
 
@@ -1468,7 +1468,7 @@ function modalEdit(m) {
     '<p class="muted" style="margin-top:0">Put right anything that is wrong.</p>' +
 
     '<div class="stack" style="margin-top:16px">' +
-      '<div><span class="label">Which freezer</span><div class="chips">' + freezers + '</div></div>' +
+      '<div><span class="label">Which store</span><div class="chips">' + stores + '</div></div>' +
 
       '<div><span class="label">Date it went in</span>' +
         '<div class="row">' +
@@ -1527,7 +1527,7 @@ function modalSplit(m) {
 
   return wrap(
     '<h2 class="modal-title">Split the ' + esc(lotSize(l)) + '</h2>' +
-    '<p class="muted" style="margin-top:0">' + esc(l.item) + ' &middot; ' + esc(l.freezer) + ' freezer</p>' +
+    '<p class="muted" style="margin-top:0">' + esc(l.item) + ' &middot; ' + esc(l.store) + ' store</p>' +
     (l.count > 1
       ? '<div class="chips" style="margin:14px 0">' +
         '<button class="chip' + (into === l.count ? ' is-on' : '') + '" data-act="set-split" data-n="' + l.count + '">' +
@@ -1573,7 +1573,7 @@ function modalRename(m) {
     '<h2 class="modal-title">Rename ' + (isItem ? 'this' : 'this group') + '</h2>' +
     '<p class="muted" style="margin-top:0">' +
       (isItem
-        ? 'Every bag of &ldquo;' + esc(m.from) + '&rdquo; will take the new name, in the freezers and in the record of what has been used.'
+        ? 'Every bag of &ldquo;' + esc(m.from) + '&rdquo; will take the new name, in store and in the record of what has been used.'
         : 'Everything filed under &ldquo;' + esc(m.from) + '&rdquo; will move to the new name.') +
     '</p>' +
     (collision ? '<div class="banner" style="margin-top:12px">' + collision + '</div>' : '') +
@@ -1608,7 +1608,7 @@ var ACTIONS = {
   tab: function (d) {
     setState({ tab: d.tab, modal: null });
     // Otherwise a tap on "Put in" from halfway down 200 bags lands halfway
-    // down the form, with "What are you putting in the freezer?" off screen.
+    // down the form, with "What are you putting in the store?" off screen.
     window.scrollTo(0, 0);
     // #panel has carried tabindex="-1" all along; nothing ever focused it, so
     // a screen reader was never told the view had changed.
@@ -1641,7 +1641,7 @@ var ACTIONS = {
         // Something counted last time is almost certainly counted this time.
         showCount: !!unit,
         dateIn: S.draft.dateIn || S.today,
-        freezer: S.draft.freezer || (S.freezers[0] ? S.freezers[0].name : ''),
+        store: S.draft.store || (S.stores[0] ? S.stores[0].name : ''),
       }),
     });
   },
@@ -1666,7 +1666,7 @@ var ACTIONS = {
         category: cat,
         weightG: 500,
         dateIn: S.draft.dateIn || S.today,
-        freezer: S.draft.freezer || (S.freezers[0] ? S.freezers[0].name : ''),
+        store: S.draft.store || (S.stores[0] ? S.stores[0].name : ''),
       }),
     });
   },
@@ -1752,8 +1752,8 @@ var ACTIONS = {
     setState({ draft: Object.assign({}, S.draft, { qty: next }) });
   },
 
-  'set-freezer': function (d) {
-    setState({ draft: Object.assign({}, S.draft, { freezer: d.name }) });
+  'set-store': function (d) {
+    setState({ draft: Object.assign({}, S.draft, { store: d.name }) });
   },
 
   'open-date': function (d) {
@@ -1836,7 +1836,7 @@ var ACTIONS = {
   'save-add': function () { doAdd(); },
 
   /* --- view --- */
-  'set-freezer-filter': function (d) { setState({ freezer: d.name, viewLimit: 60, takeLimit: 40 }); },
+  'set-store-filter': function (d) { setState({ store: d.name, viewLimit: 60, takeLimit: 40 }); },
   'set-search': debounced(function (v) { setState({ search: v, viewLimit: 60, takeLimit: 40 }); }),
   'view-more': function () { setState({ viewLimit: S.viewLimit + 60 }); },
   'toggle-open': function (d) {
@@ -1889,13 +1889,13 @@ var ACTIONS = {
     if (!l) return;
     setState({
       modal: {
-        kind: 'edit', id: l.id, freezer: l.freezer, dateIn: l.dateIn, monthOnly: !!l.monthOnly,
+        kind: 'edit', id: l.id, store: l.store, dateIn: l.dateIn, monthOnly: !!l.monthOnly,
         weightG: l.weightG, count: l.count, unit: l.unit || 'pieces', note: l.note,
       },
     });
   },
 
-  'edit-freezer': function (d) { S.modal.notice = null; S.modal.freezer = d.name; render(); },
+  'edit-store': function (d) { S.modal.notice = null; S.modal.store = d.name; render(); },
   'edit-unit': function (d) { S.modal.notice = null; S.modal.unit = d.unit; render(); },
   'edit-note': function (d, el) { S.modal.note = el.value; },
 
@@ -1983,12 +1983,12 @@ function doAdd() {
   advanceToday();
   var d = S.draft;
   var payload = {
-    item: d.item, category: d.category, freezer: d.freezer,
+    item: d.item, category: d.category, store: d.store,
     weightG: d.weightG, count: d.showCount ? d.count : 0, unit: d.unit,
     qty: d.qty, dateIn: d.dateIn || S.today, monthOnly: !!d.monthOnly, note: d.note,
   };
   var label = d.qty + ' × ' + draftEach(d) + ' ' + d.item;
-  var sub = 'into the ' + d.freezer + ' freezer · ' + fmtDate(payload.dateIn);
+  var sub = 'into the ' + d.store + ' store · ' + fmtDate(payload.dateIn);
 
   setState({ busy: true });
   api('apiAdd', payload).then(function (res) {
@@ -2003,12 +2003,12 @@ function doAdd() {
     S.recentAdds.unshift({ label: label, sub: sub, token: res.undo });
     S.recentAdds = S.recentAdds.slice(0, 8);
     done();
-    // Keep the freezer and date so a run of bagging-up stays quick.
+    // Keep the store and date so a run of bagging-up stays quick.
     S.draft = Object.assign({}, BLANK_DRAFT, {
-    freezer: d.freezer, dateIn: d.dateIn, monthOnly: d.monthOnly,
+    store: d.store, dateIn: d.dateIn, monthOnly: d.monthOnly,
   });
     S.query = '';
-    toast(label + ' put in the ' + d.freezer + ' freezer', res.undo);
+    toast(label + ' put in the ' + d.store + ' store', res.undo);
   }).catch(function (e) {
     S.busy = false;
     fail(e);
@@ -2028,10 +2028,10 @@ function doTake(ids) {
     : kinds.slice(0, 3).map(function (n) { return names[n] > 1 ? names[n] + ' \u00d7 ' + n : n; }).join(', ') +
       (kinds.length > 3 ? ' and ' + (kinds.length - 3) + ' more' : '');
 
-  var freezers = {};
-  lots.forEach(function (l) { freezers[l.freezer] = 1; });
-  var where = Object.keys(freezers);
-  var sub = 'out of the ' + (where.length === 1 ? where[0] + ' freezer' : where.length + ' freezers') +
+  var stores = {};
+  lots.forEach(function (l) { stores[l.store] = 1; });
+  var where = Object.keys(stores);
+  var sub = 'out of the ' + (where.length === 1 ? where[0] + ' store' : where.length + ' stores') +
     ' \u00b7 ' + fmtDate(S.today);
 
   setState({ busy: true, modal: null });
@@ -2065,7 +2065,7 @@ function doPart(id, value) {
   api('apiRemovePart', payload).then(function (res) {
     lot.weightG -= takenW;
     if (counted) lot.count -= value;
-    S.recentTakes.unshift({ label: label, sub: 'out of the ' + lot.freezer + ' freezer · ' + lotSize(lot) + ' left', token: res.undo });
+    S.recentTakes.unshift({ label: label, sub: 'out of the ' + lot.store + ' store · ' + lotSize(lot) + ' left', token: res.undo });
     S.recentTakes = S.recentTakes.slice(0, 8);
     done();
     toast(label + ' taken out', res.undo);
@@ -2078,7 +2078,7 @@ function doPart(id, value) {
 function doEdit() {
   var m = S.modal;
   var patch = {
-    freezer: m.freezer, dateIn: m.dateIn, monthOnly: !!m.monthOnly, weightG: m.weightG,
+    store: m.store, dateIn: m.dateIn, monthOnly: !!m.monthOnly, weightG: m.weightG,
     count: m.count, unit: m.count > 0 ? m.unit : '', note: m.note,
   };
   setState({ busy: true, modal: null });
@@ -2158,7 +2158,7 @@ function load(showToast) {
     S.slowLoad = false;
     succeeded();
     S.loadFailed = false;
-    S.freezers = st.freezers;
+    S.stores = st.stores;
     S.items = st.items;
     S.categories = st.categories;
     S.inventory = st.inventory;
@@ -2166,7 +2166,7 @@ function load(showToast) {
     S.sheetUrl = st.sheetUrl || '';
     S.today = st.today || todayISO();
     if (!S.draft.dateIn) S.draft.dateIn = S.today;
-    if (!S.draft.freezer && S.freezers[0]) S.draft.freezer = S.freezers[0].name;
+    if (!S.draft.store && S.stores[0]) S.draft.store = S.stores[0].name;
     S.ready = true;
     render();
     if (showToast) toast('Reloaded from the spreadsheet.');
@@ -2174,7 +2174,7 @@ function load(showToast) {
     clearTimeout(slowTimer);
     S.slowLoad = false;
     // Not "ready with nothing in it" — that is indistinguishable from an empty
-    // freezer, and the app then told the user to go and repair a spreadsheet
+    // store, and the app then told the user to go and repair a spreadsheet
     // that was perfectly fine. An unknown state is never drawn as a known one.
     S.ready = true;
     S.loadFailed = true;
@@ -2188,7 +2188,7 @@ function load(showToast) {
  * visible — one to two seconds in which the row you have just asked to remove
  * is still sitting there looking tappable. Tapping it again is the natural
  * response, and the second call then failed with "Those bags are no longer in
- * the freezer": a red error for an action that had in fact succeeded.
+ * the store": a red error for an action that had in fact succeeded.
  *
  * S.busy was already set by all seven operations and read by exactly one
  * button. Refusing anything that writes, here, makes the protection deliberate
@@ -2202,7 +2202,7 @@ function writesToSheet(act) {
  * Everywhere else the app trades confirmation for undo. The Edit dialog is the
  * one place where a stray tap outside destroys work that was never committed,
  * so there is nothing to undo — and a mis-tap beside a bottom sheet, on a
- * tablet held at a freezer, is not a rare event.
+ * tablet held at a store, is not a rare event.
  */
 function tryCloseModal() {
   if (modalIsDirty()) {

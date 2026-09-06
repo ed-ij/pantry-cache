@@ -1,5 +1,5 @@
 /**
- * Freezer Log — Google Apps Script host.
+ * Pantry Cache — Google Apps Script host.
  *
  * Provides the `DB` adapter that src/backend.js expects, backed by the
  * spreadsheet this script is bound to, plus the web-app entry point.
@@ -7,7 +7,7 @@
  */
 
 /** Bumped when the sheet layout changes, to force a one-off re-setup. */
-const SETUP_VERSION = '2';
+const SETUP_VERSION = '3';
 
 let SS_ = null;
 
@@ -29,6 +29,35 @@ function spreadsheet_() {
 let CACHE_ = {};
 let HEADERS_ = {};
 
+/**
+ * The app was called Freezer Log and its tab was `Freezers`; both were renamed
+ * once it became clear nothing about it is specific to freezing. A sheet
+ * written by the old code still says so.
+ *
+ * This has to run before the header check below. That check appends whatever is
+ * missing, so left to itself it would add an empty `Store` column beside the
+ * populated `Freezer` one and quietly orphan every value in it. Renaming in
+ * place keeps the data attached to its column.
+ *
+ * Idempotent: a sheet already using the new names, or a fresh one with neither,
+ * comes out unchanged.
+ */
+function migrateFreezersToStores_(ss) {
+  const old = ss.getSheetByName('Freezers');
+  if (old && !ss.getSheetByName('Stores')) old.setName('Stores');
+
+  ['Inventory', 'History'].forEach(function (name) {
+    const sh = ss.getSheetByName(name);
+    if (!sh) return;
+    const row = headerRow_(sh);
+    const at = row.indexOf('Freezer');
+    if (at < 0 || row.indexOf('Store') >= 0) return;
+    sh.getRange(1, at + 1).setValue('Store');
+  });
+
+  HEADERS_ = {};
+}
+
 const DB = {
   /**
    * Creates and formats the tabs. Formatting the sheet on every page load would
@@ -41,6 +70,8 @@ const DB = {
     const names = Object.keys(TABLES);
     const allPresent = names.every(function (n) { return !!ss.getSheetByName(n); });
     if (!force && allPresent && props.getProperty('SETUP_VERSION') === SETUP_VERSION) return;
+
+    migrateFreezersToStores_(ss);
 
     let created = false;
 
@@ -88,8 +119,8 @@ const DB = {
       if (stray && ss.getSheets().length > 1 && stray.getLastRow() === 0) ss.deleteSheet(stray);
     }
 
-    if (!DB.getAll('Freezers').filter(function (r) { return txt(r.Name); }).length) {
-      DB.append('Freezers', SEED_FREEZERS);
+    if (!DB.getAll('Stores').filter(function (r) { return txt(r.Name); }).length) {
+      DB.append('Stores', SEED_STORES);
     }
 
     props.setProperty('SETUP_VERSION', SETUP_VERSION);
@@ -328,7 +359,7 @@ function findRow_(sh, id) {
 function doGet() {
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
-    .setTitle('Freezer Log')
+    .setTitle('Pantry Cache')
     // Deployed with Anyone access, so the URL alone can write. Without this,
     // any page may frame the app, which is the whole of a clickjacking setup.
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.SAMEORIGIN)
@@ -342,7 +373,7 @@ function include(name) {
 /** Spreadsheet menu, so the sheet itself offers a way in. */
 function onOpen() {
   SpreadsheetApp.getUi()
-    .createMenu('Freezer Log')
+    .createMenu('Pantry Cache')
     .addItem('Open the app / get my link', 'showSetup')
     .addItem('Set up / repair sheets', 'setupSheets')
     .addItem('Check for updates', 'showUpdate')
@@ -368,7 +399,7 @@ function setupSheets() {
       'interrupted partway.\n\n' + both.slice(0, 20).join('\n') +
       (both.length > 20 ? '\n…and ' + (both.length - 20) + ' more' : '') +
       '\n\nDelete whichever row is wrong: the History row if the bag is still ' +
-      'in the freezer, the Inventory row if it has been used.',
+      'in the store, the Inventory row if it has been used.',
       SpreadsheetApp.getUi().ButtonSet.OK,
     );
   }
@@ -405,7 +436,7 @@ function showSetup() {
 
   SpreadsheetApp.getUi().showModalDialog(
     HtmlService.createHtmlOutput(html).setWidth(560).setHeight(600),
-    'Freezer Log',
+    'Pantry Cache',
   );
 }
 
@@ -420,7 +451,7 @@ function showSetup() {
  * So each copy pulls rather than being pushed to: it asks a small JSON file on
  * GitHub what the current build is, compares it against its own stamp, and if
  * there is something newer, shows the files to paste. Nothing updates itself.
- * A bad release still cannot reach anyone's freezer list without them choosing
+ * A bad release still cannot reach anyone's store list without them choosing
  * to take it, so independence survives intact.
  */
 const RELEASE_FILES = [
@@ -474,6 +505,6 @@ function apiUpdateFile(name) {
 function showUpdate() {
   SpreadsheetApp.getUi().showModalDialog(
     HtmlService.createHtmlOutputFromFile('Update').setWidth(620).setHeight(620),
-    'Freezer Log — updates',
+    'Pantry Cache — updates',
   );
 }
