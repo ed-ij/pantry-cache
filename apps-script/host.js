@@ -119,10 +119,6 @@ const DB = {
       if (stray && ss.getSheets().length > 1 && stray.getLastRow() === 0) ss.deleteSheet(stray);
     }
 
-    if (!DB.getAll('Stores').filter(function (r) { return txt(r.Name); }).length) {
-      DB.append('Stores', SEED_STORES);
-    }
-
     props.setProperty('SETUP_VERSION', SETUP_VERSION);
     props.setProperty('SPREADSHEET_ID', ss.getId());
   },

@@ -9,10 +9,19 @@ const SRC = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
 let B = null;
 const store = {};
 
+// Setup no longer invents places, so the fixture supplies its own. Kept here
+// rather than in the backend because these exist for the tests, not for users.
+let seedStores = true;
+
+const FIXTURE_STORES = [
+  { Name: 'Kitchen', Where: 'Fridge-freezer indoors', Colour: '#5F8A20' },
+  { Name: 'Garage', Where: 'Chest freezer', Colour: '#7A3FA2' },
+];
+
 const DB = {
   ensure() {
     Object.keys(B.TABLES).forEach((n) => { if (!store[n]) store[n] = []; });
-    if (!store.Stores.length) DB.append('Stores', B.SEED_STORES);
+    if (seedStores && !store.Stores.length) DB.append('Stores', FIXTURE_STORES);
   },
   today: () => '2026-08-19',
   sheetUrl: () => '',
@@ -64,8 +73,8 @@ const DB = {
 
 const code = readFileSync(join(SRC, 'backend.js'), 'utf8');
 B = new Function('DB', `${code}
-  return { TABLES, SEED_STORES, apiGetState, apiAdd, apiRemove, apiRemovePart, apiUndo,
-           apiEditLot, apiSplitLot, apiRenameItem, apiRenameCategory };`)(DB);
+  return { TABLES, SUGGESTED_STORES, apiGetState, apiAdd, apiRemove, apiRemovePart, apiUndo,
+           apiEditLot, apiSplitLot, apiRenameItem, apiRenameCategory, apiSaveStores };`)(DB);
 
 const stock = () => B.apiGetState().inventory;
 const keyish = (v) => String(v || '').trim().toLowerCase();
@@ -376,5 +385,49 @@ assert.throws(
   /no longer be undone|already/i,
   'a spent handle is refused the second time',
 );
+
+/* --- first-run: naming the places from inside the app --- */
+seedStores = false;
+fresh();
+assert.equal(B.apiGetState().stores.length, 0, 'setup no longer invents places');
+
+B.apiSaveStores({ stores: [
+  { name: 'Shed', where: 'Chest freezer', colour: '#1F7A6B' },
+  { name: 'Pantry', where: '', colour: '' },
+] });
+const saved = B.apiGetState().stores;
+assert.equal(saved.length, 2, 'both places were written');
+assert.equal(saved[0].name, 'Shed');
+assert.equal(saved[0].colour, '#1F7A6B', 'a chosen colour is kept');
+assert.match(saved[1].colour, /^#[0-9a-f]{6}$/i, 'a blank colour falls back to the palette');
+
+/* Appends rather than replaces, so it is also the "add the new shed" case. */
+B.apiSaveStores({ stores: [{ name: 'Cellar', where: '', colour: '' }] });
+assert.equal(B.apiGetState().stores.length, 3, 'a later save adds rather than replaces');
+
+assert.throws(
+  () => B.apiSaveStores({ stores: [{ name: 'shed', where: '', colour: '' }] }),
+  /already a place called/i,
+  'a name that differs only by case is still the same place',
+);
+assert.throws(
+  () => B.apiSaveStores({ stores: [{ name: '  ', where: '', colour: '' }] }),
+  /needs a name/i,
+  'a blank name is refused',
+);
+assert.throws(
+  () => B.apiSaveStores({ stores: [
+    { name: 'Loft', where: '', colour: '' },
+    { name: 'Loft', where: '', colour: '' },
+  ] }),
+  /twice/i,
+  'the same name twice in one save is refused',
+);
+assert.equal(B.apiGetState().stores.length, 3, 'nothing was written by the refused saves');
+
+/* A colour reaches a CSS custom property, so it is validated on the way in. */
+B.apiSaveStores({ stores: [{ name: 'Porch', where: '', colour: 'red; }" onload="' }] });
+const porch = B.apiGetState().stores.filter((f) => f.name === 'Porch')[0];
+assert.match(porch.colour, /^#[0-9a-f]{6}$/i, 'a colour that is not a hex code never reaches the sheet');
 
 console.log('All backend checks passed.');

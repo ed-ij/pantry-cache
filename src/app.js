@@ -323,6 +323,12 @@ var S = {
   // and the backend has always accepted a list.
   selected: {},
 
+  // The first-run screen's draft. Null until that screen is first rendered, so
+  // a copy that already has stores never carries a form it will not show.
+  newStores: null,
+  suggestedStores: [],
+  storeColours: [],
+
   modal: null,
   toast: null,
   busy: false,
@@ -411,7 +417,7 @@ function render() {
   var selStart = focusId && 'selectionStart' in active ? active.selectionStart : null;
 
   $('#topbar-right').innerHTML = renderTopRight();
-  $('#tabbar').innerHTML = renderTabs();
+  $('#tabbar').innerHTML = isFirstRun() ? '' : renderTabs();
   $('#panel').innerHTML = S.ready ? renderPanel() : renderLoading();
 
   // aria-live: rewriting this on every render — which means every keystroke in
@@ -542,8 +548,111 @@ function renderTabs() {
   }).join('');
 }
 
+/**
+ * An empty store list used to be a dead end: the Put in tab said "No stores
+ * listed yet — add them on the Stores tab of the spreadsheet", which asks
+ * somebody who has just opened an app to go and edit a spreadsheet before it
+ * will do anything. It is only reachable when the load *succeeded* and returned
+ * nothing, so it can be trusted as an empty sheet rather than a failed fetch.
+ */
+function isFirstRun() {
+  return S.ready && !S.loadFailed && !S.stores.length;
+}
+
+/** A row's colour, falling back to the palette position so it is never unset. */
+function storeDraftColour(row, i) {
+  return row.colour || S.storeColours[i % (S.storeColours.length || 1)] || '#5F8A20';
+}
+
+function firstRunDraft() {
+  if (!S.newStores) S.newStores = [{ name: '', where: '', colour: '' }];
+  return S.newStores;
+}
+
+function renderFirstRun() {
+  var rows = firstRunDraft();
+  var palette = S.storeColours.length ? S.storeColours : ['#5F8A20'];
+
+  var used = {};
+  rows.forEach(function (r) { if (r.name) used[r.name.trim().toLowerCase()] = true; });
+
+  var suggestions = S.suggestedStores
+    .filter(function (n) { return !used[n.toLowerCase()]; })
+    .map(function (n) {
+      return '<button class="chip" data-act="store-suggest" data-name="' + esc(n) + '">' + esc(n) + '</button>';
+    }).join('');
+
+  var cards = rows.map(function (row, i) {
+    var swatches = palette.map(function (c) {
+      var on = storeDraftColour(row, i).toLowerCase() === c.toLowerCase();
+      return '<button class="swatch' + (on ? ' is-on' : '') + '" style="--fz:' + esc(c) + '" ' +
+        'data-act="store-colour" data-row="' + i + '" data-colour="' + esc(c) + '" ' +
+        'aria-label="Colour ' + esc(c) + '" aria-pressed="' + (on ? 'true' : 'false') + '"></button>';
+    }).join('');
+
+    return '<div class="card stack">' +
+      '<div class="row">' +
+        '<div class="spacer">' +
+          '<label class="label" for="store-name-' + i + '">What is it called?</label>' +
+          '<input class="input input-hero" id="store-name-' + i + '" type="text" ' +
+            'placeholder="Garage" value="' + esc(row.name) + '" ' +
+            'data-act="store-name" data-row="' + i + '">' +
+        '</div>' +
+        (rows.length > 1
+          ? '<button class="btn btn-ghost btn-compact" data-act="store-row-del" data-row="' + i + '" ' +
+            'aria-label="Remove this one">Remove</button>'
+          : '') +
+      '</div>' +
+
+      '<div>' +
+        '<label class="label" for="store-where-' + i + '">Where is it? <span class="muted small">optional</span></label>' +
+        '<input class="input" id="store-where-' + i + '" type="text" ' +
+          'placeholder="Chest freezer by the door" value="' + esc(row.where) + '" ' +
+          'data-act="store-where" data-row="' + i + '">' +
+      '</div>' +
+
+      '<div>' +
+        '<span class="label">Which colour marks it?</span>' +
+        '<div class="swatches">' + swatches + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  var named = rows.filter(function (r) { return r.name.trim(); }).length;
+
+  return '<div class="stack">' +
+    '<div class="card">' +
+      '<div style="font-size:1.5rem;font-weight:800;letter-spacing:-.03em">Where do you keep things?</div>' +
+      '<p class="muted" style="margin-top:8px">' +
+        'A freezer, a fridge, the pantry, a shelf in the shed &mdash; anywhere you want to keep ' +
+        'track of. You can add more later, and change any of this in the spreadsheet whenever ' +
+        'you like.' +
+      '</p>' +
+      (suggestions
+        ? '<div style="margin-top:12px"><span class="label">Common ones</span>' +
+          '<div class="chips">' + suggestions + '</div></div>'
+        : '') +
+    '</div>' +
+
+    cards +
+
+    '<button class="btn btn-ghost" data-act="store-row-add">Add another place</button>' +
+
+    '<button class="btn btn-warm btn-hero" data-act="save-stores"' +
+      (named && !S.busy ? '' : ' disabled') + '>' +
+      (S.busy ? 'Saving&hellip;' : named > 1 ? 'Save these ' + named + ' places' : 'Save this place') +
+    '</button>' +
+
+    (S.sheetUrl
+      ? '<p class="muted small" style="text-align:center">or ' +
+        '<a href="' + esc(S.sheetUrl) + '" target="_blank" rel="noopener">set them up in the spreadsheet</a></p>'
+      : '') +
+  '</div>';
+}
+
 function renderPanel() {
   if (S.loadFailed) return renderLoadFailed();
+  if (isFirstRun()) return renderFirstRun();
   if (S.tab === 'add') return renderAdd();
   if (S.tab === 'view') return renderView();
   return renderTake();
@@ -771,8 +880,9 @@ function renderAddDetails() {
 
     '<div class="card">' +
       '<span class="label">Which store?</span>' +
+      // No "none listed yet" fallback: an empty store list is caught by
+      // renderFirstRun() before this screen is ever reached.
       '<div class="chips">' + storeBtns + '</div>' +
-      (S.stores.length ? '' : '<div class="muted small" style="margin-top:8px">No stores listed yet &mdash; add them on the <b>Stores</b> tab of the spreadsheet.</div>') +
     '</div>' +
 
     '<div class="card' + (backdated ? ' is-flagged' : '') + '">' +
@@ -1961,6 +2071,41 @@ var ACTIONS = {
   'open-rename': function (d) {
     setState({ modal: { kind: 'rename', scope: d.scope, from: d.from, value: d.from } });
   },
+  'store-name': function (d, el) {
+    firstRunDraft()[Number(d.row)].name = el.value;
+    // Deliberately not re-rendering: this fires on every keystroke and a
+    // re-render would take the caret with it. The value is read back on save,
+    // and the only thing that lags is whether the Save button is enabled.
+  },
+  'store-where': function (d, el) {
+    firstRunDraft()[Number(d.row)].where = el.value;
+  },
+  'store-colour': function (d) {
+    firstRunDraft()[Number(d.row)].colour = d.colour;
+    setState({});
+  },
+  'store-suggest': function (d) {
+    var rows = firstRunDraft();
+    // Fill the first empty name rather than always appending, so tapping three
+    // suggestions in a row does not leave a blank card between each.
+    var at = -1;
+    for (var i = 0; i < rows.length; i++) {
+      if (!rows[i].name.trim()) { at = i; break; }
+    }
+    if (at < 0) { rows.push({ name: '', where: '', colour: '' }); at = rows.length - 1; }
+    rows[at].name = d.name;
+    setState({});
+  },
+  'store-row-add': function () {
+    firstRunDraft().push({ name: '', where: '', colour: '' });
+    setState({});
+  },
+  'store-row-del': function (d) {
+    firstRunDraft().splice(Number(d.row), 1);
+    setState({});
+  },
+  'save-stores': function () { doSaveStores(); },
+
   'rename-input': function (d, el) {
     setState({ modal: Object.assign({}, S.modal, { value: el.value, notice: null }) });
   },
@@ -2107,6 +2252,40 @@ function doSplit(id, into) {
   });
 }
 
+/**
+ * Reads the values straight off the inputs rather than trusting the draft: the
+ * keystroke handlers deliberately do not re-render, so a name typed and saved
+ * without leaving the field is in the DOM before it is in state.
+ */
+function doSaveStores() {
+  var rows = firstRunDraft().map(function (row, i) {
+    var name = $('#store-name-' + i);
+    var where = $('#store-where-' + i);
+    return {
+      name: name ? tidyName(name.value) : row.name,
+      where: where ? tidyName(where.value) : row.where,
+      colour: storeDraftColour(row, i),
+    };
+  }).filter(function (r) { return r.name; });
+
+  if (!rows.length) return;
+
+  setState({ busy: true });
+  api('apiSaveStores', { stores: rows }).then(function () {
+    done();
+    S.newStores = null;
+    return load(false).then(function () {
+      // Landing on Put in is the point: they came here to record something, and
+      // naming the places was the obstacle, not the errand.
+      setState({ tab: 'add' });
+      toast(rows.length > 1 ? rows.length + ' places saved.' : rows[0].name + ' saved.');
+    });
+  }).catch(function (e) {
+    S.busy = false;
+    fail(e);
+  });
+}
+
 function doRename() {
   var m = S.modal;
   var to = tidyName(m.value);
@@ -2159,6 +2338,8 @@ function load(showToast) {
     succeeded();
     S.loadFailed = false;
     S.stores = st.stores;
+    S.suggestedStores = st.suggestedStores || [];
+    S.storeColours = st.storeColours || [];
     S.items = st.items;
     S.categories = st.categories;
     S.inventory = st.inventory;

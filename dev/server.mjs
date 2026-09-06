@@ -34,9 +34,6 @@ const DB = {
     Object.keys(B.TABLES).forEach((name) => {
       if (!store[name]) store[name] = [];
     });
-    if (!store.Stores.filter((r) => String(r.Name || '').trim()).length) {
-      DB.append('Stores', B.SEED_STORES);
-    }
   },
 
   today() {
@@ -111,8 +108,8 @@ const DB = {
 function loadBackend() {
   const code = readFileSync(join(SRC, 'backend.js'), 'utf8');
   const factory = new Function('DB', `${code}
-    return { TABLES, DATE_COLUMNS, SEED_STORES, apiGetState, apiAdd, apiRemove, apiRemovePart, apiUndo,
-             apiEditLot, apiSplitLot, apiRenameItem, apiRenameCategory };`);
+    return { TABLES, DATE_COLUMNS, SUGGESTED_STORES, apiGetState, apiAdd, apiRemove, apiRemovePart, apiUndo,
+             apiEditLot, apiSplitLot, apiRenameItem, apiRenameCategory, apiSaveStores };`);
   return factory(DB);
 }
 

@@ -1,8 +1,8 @@
 /// Built by build.mjs from apps-script/host.js + src/backend.js — do not edit here.
 
 /** Stamped by build.mjs. Shown in the setup dialog and compared against latest.json. */
-const BUILD = '2026-09-06T10:51:54Z';
-const BUILD_COMMIT = '748cf7f';
+const BUILD = '2026-09-06T11:08:50Z';
+const BUILD_COMMIT = 'dfd707f';
 const BUILD_BRANCH = 'dev';
 const RELEASE_BASE = 'https://raw.githubusercontent.com/ed-ij/pantry-cache/dev/';
 
@@ -125,10 +125,6 @@ const DB = {
     if (created) {
       const stray = ss.getSheetByName('Sheet1');
       if (stray && ss.getSheets().length > 1 && stray.getLastRow() === 0) ss.deleteSheet(stray);
-    }
-
-    if (!DB.getAll('Stores').filter(function (r) { return txt(r.Name); }).length) {
-      DB.append('Stores', SEED_STORES);
     }
 
     props.setProperty('SETUP_VERSION', SETUP_VERSION);
@@ -552,10 +548,14 @@ const DEFAULT_CATEGORIES = ['Fruit', 'Vegetables', 'Herbs', 'Meat & fish', 'Prep
 
 const STORE_COLOURS = ['#5F8A20', '#7A3FA2', '#B53464', '#1F7A6B', '#8A6A12', '#00699B'];
 
-const SEED_STORES = [
-  { Name: 'Kitchen', Where: 'Fridge-store indoors', Colour: STORE_COLOURS[0] },
-  { Name: 'Garage', Where: 'Chest store', Colour: STORE_COLOURS[1] },
-];
+/**
+ * Offered on the first-run screen as one-tap starting points, never written
+ * without being asked for. Setup used to append Kitchen and Garage to every new
+ * sheet, which meant nobody ever saw an empty store list — and everybody who
+ * did not happen to have a garage started by deleting a place they had never
+ * named, in a spreadsheet, before they could use the app at all.
+ */
+const SUGGESTED_STORES = ['Kitchen', 'Garage', 'Pantry', 'Utility', 'Shed', 'Cellar'];
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -829,6 +829,11 @@ function apiGetState() {
   // currently in the stores, so it is not sent over the wire.
   return {
     stores: stores,
+    // Only of use when `stores` is empty, but sent always: asking for them in a
+    // second call would mean the first-run screen renders once without its
+    // suggestions and again with them.
+    suggestedStores: SUGGESTED_STORES,
+    storeColours: STORE_COLOURS,
     items: itemList,
     categories: Object.keys(categories).map(function (k) { return categories[k]; }),
     inventory: inventory,
@@ -1308,6 +1313,54 @@ function undoRenameCategory_(token) {
     DB.updateColumn(table, 'Category', function (v, id) {
       return only[txt(id)] ? token.back : undefined;
     });
+  });
+}
+
+/**
+ * Records the places things are kept. Until now the only way to do this was to
+ * open the spreadsheet and type into the `Stores` tab, which is a fine escape
+ * hatch and a poor front door — constraint 1 wants the sheet to stay editable,
+ * not to be the only way in.
+ *
+ * Appends, never replaces, so this is equally the first-run screen and the
+ * "add the new shed" case, and no existing row can be lost to it.
+ */
+function apiSaveStores(p) {
+  const wanted = (p && p.stores) || [];
+  if (!wanted.length) throw new Error('Please add at least one place before saving.');
+
+  return DB.lock(function () {
+    DB.ensure();
+
+    const existing = DB.getAll('Stores')
+      .map(function (r) { return keyOf(txt(r.Name)); })
+      .filter(Boolean);
+
+    const seen = {};
+    const rows = [];
+
+    wanted.forEach(function (s, i) {
+      const name = cleanName(s && s.name);
+      if (!name) throw new Error('Every place needs a name.');
+
+      const key = keyOf(name);
+      if (existing.indexOf(key) >= 0) {
+        throw new Error('There is already a place called ' + name + '.');
+      }
+      if (seen[key]) throw new Error('You have listed ' + name + ' twice.');
+      seen[key] = true;
+
+      // Same strictness as reading: this value reaches a CSS custom property,
+      // so an unvalidated one silently breaks every dot for that store.
+      const colour = /^#[0-9a-f]{3,8}$/i.test(txt(s && s.colour))
+        ? txt(s.colour)
+        : STORE_COLOURS[(existing.length + i) % STORE_COLOURS.length];
+
+      rows.push({ Name: name, Where: cleanName(s && s.where), Colour: colour });
+    });
+
+    DB.append('Stores', rows);
+    return { added: rows.length };
   });
 }
 

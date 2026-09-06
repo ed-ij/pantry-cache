@@ -350,6 +350,35 @@ button, input, select, textarea {
 .chip.is-on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .chip.is-on-warm { background: var(--warm); border-color: var(--warm); color: var(--warm-ink); }
 
+/* The first-run colour picker. Swatches are controls, not decoration, so they
+   carry the same tap target as everything else rather than the .dot's 0.7rem. */
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.swatch {
+  width: var(--tap);
+  height: var(--tap);
+  min-width: var(--tap);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background: var(--fz, var(--ink-3));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12);
+  cursor: pointer;
+  padding: 0;
+}
+
+/* The ring sits outside the colour so it reads against a dark swatch and a
+   light one alike; colour alone would be the only signal otherwise, which is
+   exactly the thing a colour picker cannot rely on. */
+.swatch.is-on {
+  border-color: var(--surface);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12), 0 0 0 3px var(--ink);
+}
+
 .dot {
   width: .7rem;
   height: .7rem;
