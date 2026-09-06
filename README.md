@@ -25,17 +25,22 @@ is undoable.
 There is no server to run and nothing to install on anyone's machine.
 
 ```
-Google Sheet  ──  the database. Four tabs, plain columns, editable by hand.
+Google Sheet ── the database. Four tabs, plain columns, editable by hand.
      │
-     └─ Apps Script (bound to the sheet)
-            ├─ Code.gs     server logic, reads and writes the sheet
-            └─ Index/Css/Js  the web app, served at a private URL
+     └─ Apps Script, bound to the sheet
+            ├─ Code.gs           the logic; reads and writes the sheet
+            ├─ Index, Css, Js    the app, served at its own private URL
+            ├─ Setup, Update     the two dialogs in the Pantry Cache menu
+            └─ appsscript.json   permissions, and who may open the app
 ```
 
 Because the script is *bound* to the sheet, deploying it gives you a URL that
 works from any device, with no sign-in and nothing to keep switched on at home.
 
----
+Each copy holds its own code, pasted in once, so nothing changes under anybody's
+feet. **Check for updates** reads this repository over the web and offers to
+paste the newer files in; until somebody chooses to, a copy carries on exactly
+as it is.
 
 ---
 
@@ -303,12 +308,13 @@ bottom of **Open the app / get my link**, so a bug report can name a version.
 
 ```bash
 npm run dev     # http://localhost:5178, backed by dev/data.json
+npm test        # backend, the sheet adapter, and a contrast check
 npm run build   # regenerate dist/ for Apps Script
 ```
 
 The dev server runs the *real* `src/backend.js` against a JSON file instead of a
 sheet, so behaviour matches the deployed app. `dev/data.json` starts as a copy of
-`dev/seed.json` (74 sample bags); delete it to reset, or run
+`dev/seed.json` (76 sample bags); delete it to reset, or run
 `node dev/make-seed.mjs` to regenerate the sample data.
 
 | File | Role |
@@ -317,6 +323,7 @@ sheet, so behaviour matches the deployed app. `dev/data.json` starts as a copy o
 | `apps-script/host.js` | The `DB` adapter for Google Sheets, plus `doGet` and the sheet menu. |
 | `dev/server.mjs` | The `DB` adapter for local JSON, plus a static file server. |
 | `src/index.html`, `src/styles.css`, `src/app.js` | The app itself. No dependencies, no build step beyond concatenation. |
+| `src/setup.html`, `src/update.html` | The two menu dialogs. Plain pages, run inside the spreadsheet rather than the app. |
 | `build.mjs` | Wraps the above into the file layout Apps Script requires. |
 
 Edit the sources, never `dist/` — it is regenerated from scratch on every build.
