@@ -1,6 +1,6 @@
 {
-  "build": "2026-09-06T18:20:51Z",
-  "commit": "10c0480",
-  "notes": "Lists say when a bag went in once, to the month — choose the month or how long ago in Settings, and the exact day is on the bag itself. Tidier rows, and the store colours now work on any browser.",
-  "published": "2026-09-06T18:21:08.082Z"
+  "build": "2026-09-06T19:12:57Z",
+  "commit": "1bfa82e",
+  "notes": "Fixes the app failing to open with \"Argument cannot be null: mode\".",
+  "published": "2026-09-06T19:12:57.529Z"
 }

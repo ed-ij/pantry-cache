@@ -1,8 +1,8 @@
 /// Built by build.mjs from apps-script/host.js + src/backend.js — do not edit here.
 
 /** Stamped by build.mjs. Shown in the setup dialog and compared against latest.json. */
-const BUILD = '2026-09-06T18:20:51Z';
-const BUILD_COMMIT = '10c0480';
+const BUILD = '2026-09-06T19:12:57Z';
+const BUILD_COMMIT = '1bfa82e';
 const BUILD_BRANCH = 'main';
 const RELEASE_BASE = 'https://raw.githubusercontent.com/ed-ij/pantry-cache/main/';
 
@@ -366,7 +366,13 @@ function doGet() {
     .setTitle('Pantry Cache')
     // Deployed with Anyone access, so the URL alone can write. Without this,
     // any page may frame the app, which is the whole of a clickjacking setup.
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.SAMEORIGIN)
+    //
+    // DEFAULT, not SAMEORIGIN: the enum has exactly two values, ALLOWALL and
+    // DEFAULT, and it is DEFAULT that sets the restrictive header. Naming the
+    // mode after the header value it produces threw "Argument cannot be null:
+    // mode" — an undefined property, reported as a null argument — and doGet
+    // throws before it returns anything, so the app did not load at all.
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
 }
 

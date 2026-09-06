@@ -358,7 +358,13 @@ function doGet() {
     .setTitle('Pantry Cache')
     // Deployed with Anyone access, so the URL alone can write. Without this,
     // any page may frame the app, which is the whole of a clickjacking setup.
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.SAMEORIGIN)
+    //
+    // DEFAULT, not SAMEORIGIN: the enum has exactly two values, ALLOWALL and
+    // DEFAULT, and it is DEFAULT that sets the restrictive header. Naming the
+    // mode after the header value it produces threw "Argument cannot be null:
+    // mode" — an undefined property, reported as a null argument — and doGet
+    // throws before it returns anything, so the app did not load at all.
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
 }
 
