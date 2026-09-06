@@ -37,107 +37,6 @@ works from any device, with no sign-in and nothing to keep switched on at home.
 
 ---
 
-## One-time setup
-
-### 1. Build the files
-
-```bash
-npm run build
-```
-
-That writes `dist/` with the five files Apps Script wants.
-
-### 2. Create the spreadsheet
-
-Go to [sheets.new](https://sheets.new), name it something like **Pantry Cache**.
-
-### 3. Add the script
-
-In the sheet: **Extensions → Apps Script**. Then, in the script editor:
-
-- Rename the project to `Pantry Cache`.
-- Replace the contents of `Code.gs` with `dist/Code.gs`.
-- **+ → HTML** three times, creating files named exactly `Index`, `Css` and `Js`
-  (Apps Script adds the `.html` itself). Paste in `dist/Index.html`,
-  `dist/Css.html` and `dist/Js.html` respectively — replace everything that is
-  already in each file.
-- **+ → HTML** once more, named `Setup`, and paste in `dist/Setup.html`. This is
-  the dialog the spreadsheet menu shows.
-- **⚙ Project Settings → Show "appsscript.json"**, then paste in
-  `dist/appsscript.json`.
-- Save.
-
-> Prefer one command? Install [clasp](https://github.com/google/clasp), run
-> `clasp login`, then `clasp clone <scriptId>` into `dist/` and `clasp push`.
-> The five built files are already in the layout clasp expects.
-
-### 4. Set up the tabs
-
-Back in the spreadsheet, reload the page. A **Pantry Cache** menu appears next to
-Help. Choose **Pantry Cache → Open the app / get my link**, which creates the tabs
-and then walks through deploying. Approve the permissions
-prompt (it is your own script, so Google shows the "unverified app" warning —
-**Advanced → Go to Pantry Cache (unsafe)**).
-
-You now have four tabs: `Inventory`, `History`, `Items`, `Stores`.
-
-### 5. List the real stores
-
-On the **Stores** tab, replace the two example rows with the actual stores:
-
-| Name | Where | Colour |
-| --- | --- | --- |
-| Kitchen | Fridge-freezer indoors | `#2f7fd0` |
-| Garage | Big chest freezer | `#2c8f68` |
-| Utility | Upright by the back door | `#c0632a` |
-
-`Colour` is optional — leave it blank and one is chosen automatically. This is
-the only place stores are defined; the app never invents one.
-
-Pick the colour for the **light** theme only. On the dark theme the app lightens
-it automatically, so one value works in both and it cannot end up invisible on
-one of them. (On a browser too old for `color-mix`, the stored colour is used
-as-is on both — still legible, just not tuned.)
-
-### 6. Deploy
-
-Script editor → **Deploy → New deployment → Web app**:
-
-- **Execute as:** Me
-- **Who has access:** Anyone
-
-Copy the web app URL. That is the app.
-
-> **Worth a moment's thought:** "Anyone" means anyone holding that URL can open
-> and change the log, with no sign-in — which is exactly what makes it painless
-> on a tablet. The URL is long and unguessable and the contents are frozen
-> raspberries, so this is a reasonable trade. If you would rather lock it down,
-> set **Who has access** to *Anyone with a Google account*; your mum then has to
-> be signed into Google on the tablet, once.
-
-After changing any code you must **Deploy → Manage deployments → ✏️ → Version:
-New version** for the change to reach the live URL.
-
-Do that **signed in as the account that owns the script**. That keeps the URL
-unchanged and keeps the app running on the owner's authorisation against their
-own spreadsheet. Deploying from a different account produces a different URL and
-runs as that account instead, which then depends on it keeping access to the
-sheet.
-
-> **If the link fails for you but the deployment looks right**, open it in a
-> private window first. Apps Script routes `/exec` through an `authuser` index,
-> and if your browser is signed into a different Google account from the one
-> that owns the script, it fails with "Sorry, unable to open the file at this
-> time" — an account problem wearing the costume of a broken deployment.
-> Working in a private window proves anonymous access is fine. Add `?authuser=0`
-> (or `1`, `2`) to the URL, or use a browser profile signed into the owning
-> account.
-
-### 7. Put it on the tablet
-
-Open the URL in the tablet's browser and use **Add to Home screen**. It then
-opens like an app, full screen, no address bar.
-
 ---
 
 ## The spreadsheet
@@ -250,6 +149,107 @@ All of these can be undone from the toast, same as everything else.
 
 ---
 
+## Building one from scratch
+
+Only needed to make the first copy, or a template. Everybody else copies that —
+see below.
+
+### 1. Build the files
+
+```bash
+npm run build
+```
+
+That writes `dist/`: `Code.gs`, `appsscript.json`, and five HTML files.
+
+### 2. Create the spreadsheet
+
+Go to [sheets.new](https://sheets.new), name it something like **Pantry Cache**.
+
+### 3. Add the script
+
+In the sheet: **Extensions → Apps Script**. Then, in the script editor:
+
+- Rename the project to `Pantry Cache`.
+- Replace the contents of `Code.gs` with `dist/Code.gs`.
+- **+ → HTML** five times, creating files named exactly `Index`, `Css`, `Js`,
+  `Setup` and `Update` — Apps Script adds the `.html` itself. Paste the matching
+  file from `dist/` into each, replacing everything already there.
+- **⚙ Project Settings → Show "appsscript.json"**, then paste in
+  `dist/appsscript.json`.
+- Save.
+
+Five files, and a name typed wrong breaks one of them silently — `Update` is the
+easiest to miss, and without it *Check for updates* opens onto nothing.
+
+> Prefer one command? Install [clasp](https://github.com/google/clasp), run
+> `clasp login`, then `clasp clone <scriptId>` into `dist/` and `clasp push`.
+> The built files are already in the layout clasp expects.
+
+### 4. Set up the tabs
+
+Back in the spreadsheet, reload the page. A **Pantry Cache** menu appears next to
+Help. Choose **Pantry Cache → Open the app / get my link**, which creates the
+tabs and then walks through deploying. Approve the permissions prompt — it is
+your own script, so Google shows the "unverified app" warning
+(**Advanced → Go to Pantry Cache (unsafe)**).
+
+You now have four tabs: `Inventory`, `History`, `Items` and `Stores`, all empty.
+Leave them that way. The app asks where things are kept the first time it opens,
+so stores typed in here only become rows somebody has to delete.
+
+---
+
+> ### Making a template? Stop here.
+>
+> A template is a copy with the code in and no data. Do **not** deploy it —
+> each person deploys their own. Skip to [Giving it to someone
+> else](#giving-it-to-someone-else).
+
+---
+
+### 5. Deploy
+
+Script editor → **Deploy → New deployment → Web app**:
+
+- **Execute as:** Me
+- **Who has access:** Anyone
+
+Copy the web app URL. That is the app.
+
+> **Worth a moment's thought:** "Anyone" means anyone holding that URL can open
+> and change the log, with no sign-in — which is exactly what makes it painless
+> on a tablet. The URL is long and unguessable and the contents are frozen
+> raspberries, so this is a reasonable trade. If you would rather lock it down,
+> set **Who has access** to *Anyone with a Google account*; whoever uses the
+> tablet then has to be signed into Google on it, once.
+
+After changing any code you must **Deploy → Manage deployments → ✏️ → Version:
+New version** for the change to reach the live URL.
+
+Do that **signed in as the account that owns the script**. That keeps the URL
+unchanged and keeps the app running on the owner's authorisation against their
+own spreadsheet. Deploying from a different account produces a different URL and
+runs as that account instead, which then depends on it keeping access to the
+sheet.
+
+> **If the link fails for you but the deployment looks right**, open it in a
+> private window first. Apps Script routes `/exec` through an `authuser` index,
+> and if your browser is signed into a different Google account from the one
+> that owns the script, it fails with "Sorry, unable to open the file at this
+> time" — an account problem wearing the costume of a broken deployment.
+> Working in a private window proves anonymous access is fine. Add `?authuser=0`
+> (or `1`, `2`) to the URL, or use a browser profile signed into the owning
+> account.
+
+### 6. Put it on the tablet
+
+Open the URL in the tablet's browser and use **Add to Home screen**. It then
+opens like an app, full screen, no address bar. It will ask where you keep
+things; answer it, and start putting things in.
+
+---
+
 ## Giving it to someone else
 
 Each person gets their own copy, in their own Google account, with their own web
@@ -258,17 +258,13 @@ between the two, they need nothing from you.
 
 ### The template
 
-Keep one spreadsheet as the master, on whichever account should own it, and
-never put real data in it.
+A template is what stopping at the marker above leaves you with: the code in,
+the tabs empty, not deployed. Keep it on whichever account should own the
+master, and never put real data in it — whatever is in there is what everybody
+starts with.
 
-1. Follow **One-time setup** above, steps 1–4. Stop before deploying.
-2. Leave `Stores`, `Inventory`, `History` and `Items` empty. The app asks a new
-   copy where things are kept the first time it opens, so example stores in the
-   template only become rows somebody has to delete.
-3. Do **not** deploy the template. Each person deploys their own.
-
-Whenever a release goes out, bring the template up to date the same way anybody
-else does — **Pantry Cache → Check for updates** — or new copies start behind.
+When a release goes out, update the template the same way anybody else does —
+**Pantry Cache → Check for updates** — or new copies start life behind.
 
 ### The link
 
