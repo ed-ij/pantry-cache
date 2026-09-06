@@ -650,7 +650,31 @@ function paletteColours() {
  * the dark theme stopped mixing store colours with white: chroma survives now,
  * so a low-saturation choice stays a colour there instead of going grey.
  */
-var HUE_STEPS = 360;
+/**
+ * The hues the slider can stop on. A step in HSL is not a step the eye takes
+ * evenly — 90 to 150 is four greens that look like two, while the same span in
+ * the blues is clearly four colours — so an even step wastes choices in one
+ * place and starves another. These are spaced by eye instead, and the slider
+ * indexes them rather than sweeping 360 degrees.
+ *
+ * Twenty is enough to tell a household's places apart several times over, and
+ * few enough that no two are a near-miss for each other. Note how few sit
+ * between 88 and 165: that whole span reads as two or three greens however
+ * finely it is cut, so the choices are spent on the blues instead.
+ */
+var HUES = [4, 20, 36, 50, 64, 88, 112, 140, 165, 182,
+            196, 208, 222, 238, 254, 272, 290, 308, 326, 344];
+
+/** The offered hue closest to one already stored. */
+function nearestHueIndex(h) {
+  var best = 0;
+  for (var i = 1; i < HUES.length; i++) {
+    var d = Math.min(Math.abs(HUES[i] - h), 360 - Math.abs(HUES[i] - h));
+    var b = Math.min(Math.abs(HUES[best] - h), 360 - Math.abs(HUES[best] - h));
+    if (d < b) best = i;
+  }
+  return best;
+}
 var SATS = [35, 65, 95];
 var LUMS = [58, 43, 28];
 
@@ -670,6 +694,16 @@ function hexToHsl(hex) {
 
 /** The nearest offered saturation and lightness, so an existing colour lands
  *  on a real cell rather than showing nothing selected. */
+/** Hard-edged bands, one per offered hue, so the slider shows its own steps. */
+function hueStops() {
+  var n = HUES.length;
+  return HUES.map(function (h, i) {
+    var a = (i / n * 100).toFixed(2) + '%';
+    var b = ((i + 1) / n * 100).toFixed(2) + '%';
+    return 'hsl(' + h + ' 70% 45%) ' + a + ', hsl(' + h + ' 70% 45%) ' + b;
+  }).join(', ');
+}
+
 function nearestStep(list, v) {
   return list.reduce(function (best, x) {
     return Math.abs(x - v) < Math.abs(best - v) ? x : best;
@@ -701,8 +735,9 @@ function modalColour(m) {
   return wrap(
     '<h2 class="modal-title">Choose a colour</h2>' +
     '<div class="picker" style="--hue:' + m.hue + '">' +
-      '<input class="hue" type="range" min="0" max="' + (HUE_STEPS - 1) + '" ' +
-        'value="' + m.hue + '" data-act="pick-hue" aria-label="Hue">' +
+      '<input class="hue" type="range" min="0" max="' + (HUES.length - 1) + '" step="1" ' +
+        'value="' + nearestHueIndex(m.hue) + '" data-act="pick-hue" aria-label="Hue" ' +
+        'style="--stops:' + hueStops() + '">' +
       '<div class="cells" style="--cols:' + SATS.length + '">' + cells + '</div>' +
     '</div>' +
     // No spacer between them: it is a third flex child with a gap either side,
@@ -2507,6 +2542,9 @@ var ACTIONS = {
     // The store dialog is itself a modal, so its half-finished edit is carried
     // through here and put back when this step closes, either way.
     var at = colourState(d.current);
+    // Snapped on the way in, so the grid and the slider agree from the first
+    // paint. Nothing is written unless the button at the bottom is pressed.
+    at.hue = HUES[nearestHueIndex(at.hue)];
     setState({ modal: Object.assign({
       kind: 'colour',
       value: hslHex(at.hue, at.sat, at.lum),
@@ -2520,7 +2558,7 @@ var ACTIONS = {
   // this reason: one assignment repaints all twenty cells.
   'pick-hue': function (d, el) {
     var m = S.modal;
-    m.hue = Number(el.value);
+    m.hue = HUES[Number(el.value)] === undefined ? m.hue : HUES[Number(el.value)];
     m.value = hslHex(m.hue, m.sat, m.lum);
     var box = document.querySelector('.picker');
     if (box) box.style.setProperty('--hue', m.hue);
