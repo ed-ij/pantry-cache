@@ -1,0 +1,140 @@
+#!/bin/sh
+#
+# Pre-commit checks.
+#
+# Installed by `git config core.hooksPath tools/hooks`, which tools/setup-mac.sh
+# does. Hooks under .git/ are per-machine and untracked; a tracked hooksPath is
+# the same checks on every clone.
+#
+# Everything here has actually gone wrong in this repository at least once.
+# Nothing here is a matter of taste — no formatting, no lint — because a hook
+# that cries wolf gets passed with --no-verify, and then the checks that matter
+# are gone with it.
+#
+# Escape hatch, for when you mean it:  git commit --no-verify
+
+set -e
+
+RED=$(printf '\033[31m'); DIM=$(printf '\033[2m'); OFF=$(printf '\033[0m')
+note() { printf '%s  %s%s\n' "$DIM" "$1" "$OFF"; }
+fail() {
+  printf '\n%s%s%s\n' "$RED" "$1" "$OFF" >&2
+  shift
+  for line in "$@"; do printf '  %s\n' "$line" >&2; done
+  printf '\n'
+  exit 1
+}
+
+staged() { git diff --cached --name-only --diff-filter=ACM; }
+branch=$(git rev-parse --abbrev-ref HEAD)
+
+# --------------------------------------------------------------- 1. real rows
+#
+# 212 rows of a real household inventory were once swept into a commit and
+# pushed, because a .gitignore line was removed while the files were still on
+# disk and `git add -A` did the rest. .gitignore cannot defend against its own
+# removal, so this asks the question .gitignore is no longer there to answer.
+leak=$(staged | grep -Ei '(^dev/import/|\.csv$|^dev/data\.json$)' || true)
+if [ -n "$leak" ]; then
+  fail 'This commit contains what looks like real data:' \
+    "$leak" \
+    '' \
+    'dev/import/, *.csv and dev/data.json hold somebody actual’s rows.' \
+    'If this genuinely is sample data, rename it or use --no-verify.'
+fi
+
+# ----------------------------------------------------------------- 2. parsing
+for f in $(staged | grep -E '\.(js|mjs)$' || true); do
+  [ -f "$f" ] || continue
+  if ! node --check "$f" >/dev/null 2>&1; then
+    fail "$f does not parse:" "$(node --check "$f" 2>&1 | head -3)"
+  fi
+done
+
+# ------------------------------------------------------- 3. dist matches src
+#
+# dist/ is not an artefact you can regenerate later and forget about: it is
+# committed, and it is what every household fetches over the web. Editing src/
+# and committing without `npm run build` publishes exactly nothing, silently,
+# while the app carries on running old code under a new commit's name.
+if staged | grep -qE '^(src/|apps-script/|build\.mjs$)'; then
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  PANTRY_DIST="$tmp/dist" node build.mjs >/dev/null
+
+  # The stamp holds a timestamp and a commit hash, so it differs on every build
+  # by design. Everything either side of it must be identical.
+  strip() {
+    sed -E "s/^const (BUILD|BUILD_COMMIT|BUILD_BRANCH|RELEASE_BASE) = '[^']*';\$//" "$1" > "$2"
+  }
+
+  stale=''
+  for f in "$tmp"/dist/*; do
+    name=$(basename "$f")
+    if [ ! -f "dist/$name" ]; then
+      stale="$stale dist/$name (missing)"
+      continue
+    fi
+    strip "$f" "$tmp/a"
+    strip "dist/$name" "$tmp/b"
+    diff -q "$tmp/a" "$tmp/b" >/dev/null || stale="$stale dist/$name"
+  done
+  for f in dist/*; do
+    [ -f "$tmp/dist/$(basename "$f")" ] || stale="$stale $f (no longer built)"
+  done
+
+  if [ -n "$stale" ]; then
+    fail 'dist/ is behind src/:' \
+      "$stale" \
+      '' \
+      'dist/ is what households fetch, so this would publish nothing at all.' \
+      'Run `npm run build`, then stage it.'
+  fi
+  note 'dist/ matches src/'
+fi
+
+# --------------------------------------------------------------- 4. the tests
+if ! npm test >/dev/null 2>&1; then
+  fail 'Tests fail:' "$(npm test 2>&1 | tail -20)"
+fi
+note 'tests pass'
+
+# -------------------------------------------------- 5. built on this branch
+#
+# A build records the branch it was cut from and checks for updates against
+# that branch ever after. A dist stamped `dev` sitting on main tells every copy
+# in the world to follow unreleased work. That shipped once, and was caught by
+# eye while verifying something else.
+if staged | grep -q '^dist/Code\.gs$'; then
+  stamped=$(sed -n "s/^const BUILD_BRANCH = '\(.*\)';\$/\1/p" dist/Code.gs)
+  if [ "$stamped" != "$branch" ]; then
+    if [ "$branch" = "main" ]; then
+      fail "dist/ was built on '$stamped', and this is main." \
+        '' \
+        'Every copy follows the branch its own build names, so committing this' \
+        "would send all of them to '$stamped'. Rebuild here: npm run build"
+    fi
+    note "dist/ is stamped '$stamped', you are on '$branch' — rebuild before it reaches main"
+  fi
+
+  # ------------------------------------------- 6. and announced, if on main
+  #
+  # The update dialog compares a copy's stamp against latest.json, not against
+  # dist/. A build committed to main that latest.json does not name is a
+  # release nobody will ever be offered.
+  if [ "$branch" = "main" ]; then
+    built=$(sed -n "s/^const BUILD = '\(.*\)';\$/\1/p" dist/Code.gs)
+    named=$(sed -n 's/.*"build": "\([^"]*\)".*/\1/p' latest.json)
+    if [ "$built" != "$named" ]; then
+      fail 'latest.json does not name this build.' \
+        "dist/Code.gs   $built" \
+        "latest.json    $named" \
+        '' \
+        'The update dialog reads latest.json, so nobody would be offered this.' \
+        'Run: npm run release -- "What changed, in one sentence."'
+    fi
+    note 'latest.json names this build'
+  fi
+fi
+
+exit 0

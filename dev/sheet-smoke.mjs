@@ -92,16 +92,85 @@ function makeSpreadsheet(sheets) {
   };
 }
 
+/* ------------------------------------------------------ the fake HtmlService */
+
+/**
+ * Strict on purpose.
+ *
+ * `HtmlService.XFrameOptionsMode.SAMEORIGIN` does not exist. The enum holds
+ * ALLOWALL and DEFAULT and nothing else, so that expression was `undefined`,
+ * `setXFrameOptionsMode(undefined)` threw "Argument cannot be null: mode", and
+ * because it is doGet that throws, the app did not load at all — for everyone,
+ * on the first request after the release.
+ *
+ * Nothing could have caught it: HtmlService was `{}` here and doGet was never
+ * called. A lenient fake would not have helped either — it would have accepted
+ * the undefined and gone green. So this one carries the real enum members and
+ * refuses a missing argument the way Apps Script does.
+ */
+function makeHtmlService(files) {
+  const need = (v, param) => {
+    // Apps Script reports an undefined property as a null argument, which is
+    // what sent us looking for a null we had never passed.
+    if (v === undefined || v === null) throw new Error('Argument cannot be null: ' + param);
+    return v;
+  };
+
+  const output = (content) => {
+    const o = {
+      _title: '', _meta: [], _xframe: undefined, _width: 0, _height: 0,
+      getContent: () => content,
+      setTitle(t) { o._title = need(t, 'title'); return o; },
+      setWidth(w) { o._width = need(w, 'width'); return o; },
+      setHeight(h) { o._height = need(h, 'height'); return o; },
+      setXFrameOptionsMode(m) { o._xframe = need(m, 'mode'); return o; },
+      addMetaTag(name, value) { o._meta.push([need(name, 'name'), need(value, 'content')]); return o; },
+    };
+    return o;
+  };
+
+  const read = (name) => {
+    const f = files[need(name, 'filename')];
+    if (f === undefined) throw new Error('No HTML file named ' + name);
+    return f;
+  };
+
+  return {
+    /* The real enum, whole. Adding to it would defeat the point of the test. */
+    XFrameOptionsMode: { ALLOWALL: 'ALLOWALL', DEFAULT: 'DEFAULT' },
+    createHtmlOutput: (html) => output(need(html, 'html')),
+    createHtmlOutputFromFile: (name) => output(read(name)),
+    createTemplateFromFile: (name) => ({
+      /* evaluate() runs the scriptlets, which is the only thing include() is for. */
+      evaluate: () => output(read(name).replace(
+        /<\?!=\s*include\('([^']+)'\);?\s*\?>/g,
+        (_, f) => read(f),
+      )),
+    }),
+  };
+}
+
 /* --------------------------------------------------- the fake platform */
 
-function load(spreadsheet) {
+function load(spreadsheet, opts = {}) {
   const props = new Map();
   const cache = new Map();
+  const dialogs = [];
 
   const globals = {
     SpreadsheetApp: {
       getActiveSpreadsheet: () => spreadsheet,
-      getUi: () => { throw new Error('no UI in tests'); },
+      getUi: () => {
+        if (!opts.html) throw new Error('no UI in tests');
+        return {
+          showModalDialog: (out, title) => dialogs.push({ out, title }),
+          alert: () => {},
+          createMenu: function menu() {
+            const m = { addItem: () => m, addToUi: () => {} };
+            return m;
+          },
+        };
+      },
     },
     PropertiesService: {
       getScriptProperties: () => ({
@@ -124,19 +193,23 @@ function load(spreadsheet) {
     },
     ScriptApp: { getService: () => ({ isEnabled: () => false, getUrl: () => '' }) },
     UrlFetchApp: { fetch: () => { throw new Error('no network in tests'); } },
-    HtmlService: {},
+    HtmlService: opts.html ? makeHtmlService(opts.html) : {},
   };
 
   const host = readFileSync(join(ROOT, 'apps-script', 'host.js'), 'utf8');
   const backend = readFileSync(join(ROOT, 'src', 'backend.js'), 'utf8');
   const names = Object.keys(globals);
 
-  return new Function(...names, `
-    const BUILD = 'test'; const BUILD_COMMIT = 'test'; const RELEASE_BASE = '';
+  const out = new Function(...names, `
+    const BUILD = 'test'; const BUILD_COMMIT = 'test';
+    const BUILD_BRANCH = 'test'; const RELEASE_BASE = '';
     ${host}
     ${backend}
-    return { DB, TABLES, apiGetState, apiAdd, apiRemove, apiEditLot, apiUndo, toLot };
+    return { DB, TABLES, apiGetState, apiAdd, apiRemove, apiEditLot, apiUndo, toLot,
+             doGet, include, onOpen, showSetup, showUpdate };
   `)(...names.map((n) => globals[n]));
+
+  return Object.assign(out, { _dialogs: dialogs });
 }
 
 const INV = ['ID', 'Item', 'Category', 'Store', 'Weight (g)', 'Date In', 'Note', 'Count', 'Unit', 'Month only'];
@@ -283,6 +356,55 @@ const INV = ['ID', 'Item', 'Category', 'Store', 'Weight (g)', 'Date In', 'Note',
   assert.equal(B.DB.getAll('History').length, 40, 'and all forty are in History');
   assert.equal(calls.deleteRow, 0, 'no one-at-a-time deletes');
   assert.ok(calls.deleteRows <= 2, `40 contiguous rows in <=2 calls, got ${calls.deleteRows}`);
+}
+
+/* ============================ N. the entry points actually run ========= */
+{
+  // doGet, include and the two dialogs are the whole of what a browser and the
+  // spreadsheet menu touch, and until this block none of them was ever called.
+  // The files are the built ones, because those are what gets pasted into the
+  // script editor — which also proves Index's scriptlets resolve to files that
+  // exist.
+  const names = { Index: 'Index.html', Css: 'Css.html', Js: 'Js.html', Setup: 'Setup.html', Update: 'Update.html' };
+  const html = {};
+  for (const [key, file] of Object.entries(names)) {
+    try {
+      html[key] = readFileSync(join(ROOT, 'dist', file), 'utf8');
+    } catch {
+      throw new Error(`dist/${file} is missing — run \`npm run build\` before \`npm test\`.`);
+    }
+  }
+
+  const ss = makeSpreadsheet({
+    Inventory: [INV], History: [], Items: [],
+    Stores: [['Name', 'Where', 'Colour'], ['Kitchen', 'indoors', '#5F8A20']],
+  });
+  const B = load(ss, { html });
+
+  const page = B.doGet();
+  const body = page.getContent();
+
+  assert.equal(page._xframe, 'DEFAULT',
+    'DEFAULT is the mode that sets the restrictive header; ALLOWALL removes it, ' +
+    'and anything else is not a member of the enum');
+  assert.ok(page._title, 'the tab needs a name');
+  assert.ok(page._meta.some(([n]) => n === 'viewport'), 'tablet-first, so a viewport tag');
+
+  assert.ok(!/<\?!=/.test(body), 'every scriptlet resolved; a stray one ships as visible text');
+  assert.ok(body.includes('<style>'), 'Css came through include()');
+  assert.ok(body.includes('<script>'), 'Js came through include()');
+
+  assert.ok(B.include('Css').includes('<style>'), 'include() returns a file whole');
+
+  B.showSetup();
+  B.showUpdate();
+  assert.equal(B._dialogs.length, 2, 'both menu items opened a dialog');
+
+  const setup = B._dialogs[0].out.getContent();
+  assert.ok(!setup.includes('__BUILD__'), 'the build stamp was substituted, not left as a placeholder');
+  assert.ok(!setup.includes('__APP_URL__'), 'the app URL was substituted too');
+
+  B.onOpen();
 }
 
 console.log('All sheet-layout checks passed.');

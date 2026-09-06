@@ -19,7 +19,9 @@ import { execSync } from 'node:child_process';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const SRC = join(ROOT, 'src');
-const DIST = join(ROOT, 'dist');
+/* Overridable so the pre-commit hook can build somewhere disposable and compare
+   the result against what is staged, without touching the real dist/. */
+const DIST = process.env.PANTRY_DIST || join(ROOT, 'dist');
 
 const read = (...p) => readFile(join(...p), 'utf8');
 

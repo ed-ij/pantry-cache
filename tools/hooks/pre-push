@@ -1,0 +1,61 @@
+#!/bin/sh
+#
+# Pre-push checks — the ones pre-commit structurally cannot make.
+#
+# Releasing here is a fast-forward of main onto dev, and a fast-forward creates
+# no commit, so no pre-commit hook ever runs on main. Everything main-specific
+# has to be asked again at the moment it is about to become public. Pushing *is*
+# publishing: households read dist/ and latest.json straight off this branch.
+#
+# Escape hatch:  git push --no-verify
+
+set -e
+
+RED=$(printf '\033[31m'); DIM=$(printf '\033[2m'); OFF=$(printf '\033[0m')
+fail() {
+  printf '\n%s%s%s\n' "$RED" "$1" "$OFF" >&2
+  shift
+  for line in "$@"; do printf '  %s\n' "$line" >&2; done
+  printf '\n'
+  exit 1
+}
+
+ZERO='0000000000000000000000000000000000000000'
+
+# stdin: <local ref> <local sha> <remote ref> <remote sha>, one line per ref.
+while read -r _local_ref local_sha remote_ref _remote_sha; do
+  [ "$remote_ref" = 'refs/heads/main' ] || continue
+  if [ "$local_sha" = "$ZERO" ]; then continue; fi   # a deletion
+
+  code=$(git show "$local_sha:dist/Code.gs" 2>/dev/null) || fail \
+    'main has no dist/Code.gs.' \
+    'That is the file people fetch; without it the update check has nothing to read.'
+
+  stamped=$(printf '%s\n' "$code" | sed -n "s/^const BUILD_BRANCH = '\(.*\)';\$/\1/p")
+  if [ "$stamped" != 'main' ]; then
+    fail "About to publish a build stamped '$stamped'." \
+      '' \
+      'Every copy checks for updates on the branch its build names, so this' \
+      "would point every household at '$stamped' from their next update on." \
+      '' \
+      'Rebuild on main and amend:' \
+      '  npm run build && npm run release -- "…" && git commit --amend -a'
+  fi
+
+  built=$(printf '%s\n' "$code" | sed -n "s/^const BUILD = '\(.*\)';\$/\1/p")
+  named=$(git show "$local_sha:latest.json" 2>/dev/null | sed -n 's/.*"build": "\([^"]*\)".*/\1/p')
+  if [ "$built" != "$named" ]; then
+    fail 'latest.json does not name the build being pushed.' \
+      "dist/Code.gs   $built" \
+      "latest.json    $named" \
+      '' \
+      'The in-sheet dialog compares against latest.json, so this code would go' \
+      'up without anybody being offered it.' \
+      '' \
+      'Run: npm run release -- "What changed, in one sentence."'
+  fi
+
+  printf '%s  main: build %s, stamped main, named in latest.json%s\n' "$DIM" "$built" "$OFF"
+done
+
+exit 0
