@@ -651,8 +651,8 @@ function paletteColours() {
  * so a low-saturation choice stays a colour there instead of going grey.
  */
 var HUE_STEPS = 360;
-var SATS = [32, 48, 64, 80, 94];
-var LUMS = [58, 48, 38, 28];
+var SATS = [35, 65, 95];
+var LUMS = [58, 43, 28];
 
 function hexToHsl(hex) {
   var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
@@ -703,11 +703,13 @@ function modalColour(m) {
     '<div class="picker" style="--hue:' + m.hue + '">' +
       '<input class="hue" type="range" min="0" max="' + (HUE_STEPS - 1) + '" ' +
         'value="' + m.hue + '" data-act="pick-hue" aria-label="Hue">' +
-      '<div class="cells">' + cells + '</div>' +
+      '<div class="cells" style="--cols:' + SATS.length + '">' + cells + '</div>' +
     '</div>' +
-    '<div class="row" style="margin-top:20px;align-items:center">' +
+    // No spacer between them: it is a third flex child with a gap either side,
+    // which was enough to wrap the pair onto two lines on a phone.
+    '<div class="row" style="margin-top:20px;align-items:center;' +
+      'justify-content:space-between;flex-wrap:nowrap">' +
       '<button class="btn btn-ghost" data-act="cancel-colour">Cancel</button>' +
-      '<span class="spacer"></span>' +
       '<button class="btn btn-primary" data-act="use-colour">Use this colour</button>' +
     '</div>'
   );

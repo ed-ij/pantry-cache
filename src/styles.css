@@ -565,10 +565,13 @@ button, input, select, textarea {
   cursor: grab;
 }
 
+/* Three wide, so a cell would otherwise take a third of a tablet dialog and
+   push the button that commits it off the bottom. Capped and centred instead. */
 .cells {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(var(--cols, 5), minmax(0, 5.5rem));
+  justify-content: center;
+  gap: 10px;
 }
 
 .cell {
