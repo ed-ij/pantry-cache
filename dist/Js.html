@@ -446,15 +446,28 @@ function succeeded() {
 
 /* --------------------------------------------------------------- render */
 
+/** Whether the previous paint had a dialog over the app; see render(). */
+var lastRenderHadModal = false;
+
 function render() {
   document.body.classList.toggle('is-busy', !!S.busy);
   var active = document.activeElement;
   var focusId = active && active.id ? active.id : null;
   var selStart = focusId && 'selectionStart' in active ? active.selectionStart : null;
 
-  $('#topbar-right').innerHTML = renderTopRight();
-  $('#tabbar').innerHTML = (isFirstRun() || S.tab === 'settings-place') ? '' : renderTabs();
-  $('#panel').innerHTML = S.ready ? renderPanel() : renderLoading();
+  // showModal() makes everything behind the dialog inert, so while one is open
+  // the tab bar and the panel cannot be seen past it or reached. Rebuilding
+  // them on every tap inside the modal — every colour cell, every keystroke in
+  // a rename — threw away and recreated up to 13 KB of In store that nobody
+  // could look at. They are redrawn when the modal opens or closes instead,
+  // which is the only time the difference can be seen.
+  var modalOpen = !!S.modal;
+  if (!modalOpen || !lastRenderHadModal) {
+    $('#topbar-right').innerHTML = renderTopRight();
+    $('#tabbar').innerHTML = (isFirstRun() || S.tab === 'settings-place') ? '' : renderTabs();
+    $('#panel').innerHTML = S.ready ? renderPanel() : renderLoading();
+  }
+  lastRenderHadModal = modalOpen;
 
   // aria-live: rewriting this on every render — which means every keystroke in
   // a search box and every chip tap — made a screen reader re-read the toast
