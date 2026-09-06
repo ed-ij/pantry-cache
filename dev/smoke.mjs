@@ -75,7 +75,7 @@ const code = readFileSync(join(SRC, 'backend.js'), 'utf8');
 B = new Function('DB', `${code}
   return { TABLES, SUGGESTED_STORES, apiGetState, apiAdd, apiRemove, apiRemovePart, apiUndo,
            apiEditLot, apiSplitLot, apiRenameItem, apiRenameCategory, apiSaveStores,
-           apiDeleteItem };`)(DB);
+           apiDeleteItem, apiEditStore };`)(DB);
 
 const stock = () => B.apiGetState().inventory;
 const keyish = (v) => String(v || '').trim().toLowerCase();
@@ -477,5 +477,133 @@ assert.throws(
   /no item called/i,
   'removing something that is not there says so',
 );
+
+/* ===================================================================
+   apiEditStore — renaming a place, which is the change that is genuinely
+   hard to do by hand: the name is the join between the Stores tab and
+   every row in Inventory and History, and a spreadsheet find-and-replace
+   has no idea which columns it is allowed to touch.
+   =================================================================== */
+
+const placeFixture = () => {
+  seedStores = false;
+  fresh();
+  DB.append('Stores', [
+    { Name: 'Kitchen', Where: 'Fridge-freezer', Colour: '#5F8A20' },
+    { Name: 'Shed', Where: 'Down the garden', Colour: '#7A3FA2' },
+    { Name: 'Garage', Where: 'Chest freezer', Colour: '#B53464' },
+  ]);
+  B.apiAdd({ item: 'Plums', category: 'Fruit', store: 'Shed', weightG: 500, qty: 2, dateIn: '2026-07-01' });
+  B.apiAdd({ item: 'Peas', category: 'Vegetables', store: 'Kitchen', weightG: 300, qty: 1, dateIn: '2026-07-02' });
+  B.apiAdd({ item: 'Beans', category: 'Vegetables', store: 'Shed', weightG: 400, qty: 1, dateIn: '2026-07-03' });
+  // one bag through History too, so the rename has to reach both tables
+  const out = B.apiGetState().inventory.filter((l) => l.item === 'Beans')[0];
+  B.apiRemove({ ids: [out.id] });
+};
+
+const placesNamed = (n) => B.apiGetState().stores.filter((f) => f.name === n);
+const invIn = (n) => store.Inventory.filter((r) => r.Store === n).length;
+const histIn = (n) => store.History.filter((r) => r.Store === n).length;
+
+/* --- the whole point: the name is updated everywhere it is a reference --- */
+placeFixture();
+assert.equal(invIn('Shed'), 2, 'fixture: two bags in the Shed');
+assert.equal(histIn('Shed'), 1, 'fixture: one gone from the Shed');
+
+const moved = B.apiEditStore({ from: 'Shed', to: 'Bottom shed' });
+assert.equal(placesNamed('Bottom shed').length, 1, 'the Stores row is renamed');
+assert.equal(placesNamed('Shed').length, 0, 'and the old name is gone from Stores');
+assert.equal(invIn('Bottom shed'), 2, 'every Inventory row follows the rename');
+assert.equal(histIn('Bottom shed'), 1, 'and so does History');
+assert.equal(invIn('Shed') + histIn('Shed'), 0, 'nothing is left pointing at the old name');
+
+/* --- and nowhere it is not: the other places must not move --- */
+assert.equal(invIn('Kitchen'), 1, 'a different place keeps its bags');
+assert.equal(placesNamed('Kitchen').length, 1, 'and its Stores row');
+assert.equal(placesNamed('Garage').length, 1, 'an untouched place is still there');
+
+/* --- undo puts back exactly what moved --- */
+B.apiUndo(moved.undo);
+assert.equal(placesNamed('Shed').length, 1, 'undo restores the Stores row');
+assert.equal(invIn('Shed'), 2, 'and the Inventory rows');
+assert.equal(histIn('Shed'), 1, 'and the History rows');
+assert.equal(invIn('Bottom shed') + histIn('Bottom shed'), 0, 'with nothing left under the new name');
+
+/* --- a case-only rename is a real rename, not a no-op --- */
+placeFixture();
+B.apiEditStore({ from: 'Shed', to: 'SHED' });
+assert.equal(store.Stores.filter((r) => r.Name === 'SHED').length, 1, 'case-only rename reaches Stores');
+assert.equal(invIn('SHED'), 2, 'and the rows that referenced it');
+
+/* --- a row typed into the sheet by hand, in the wrong case, still follows --- */
+placeFixture();
+store.Inventory[0].Store = 'shed';
+B.apiEditStore({ from: 'Shed', to: 'Bottom shed' });
+assert.equal(invIn('Bottom shed'), 2, 'a hand-typed "shed" is matched the same way the app matches it');
+
+/* --- THE HARD ONE: undo must not capture rows that were never moved.
+   An Inventory row can name a place that is not in the Stores tab at all —
+   somebody typed it. If the rename target collides with that orphan, undoing
+   must leave the orphan alone. This is CR-D5 in a different table. --- */
+placeFixture();
+store.Inventory.push({
+  ID: 'ORPHAN1', Item: 'Rhubarb', Category: 'Fruit', Store: 'Bottom shed',
+  'Weight (g)': 250, 'Date In': '2026-06-01', Note: '', Count: '', Unit: '', 'Month only': '',
+});
+const collide = B.apiEditStore({ from: 'Shed', to: 'Bottom shed' });
+assert.equal(invIn('Bottom shed'), 3, 'the two moved bags now sit beside the orphan');
+B.apiUndo(collide.undo);
+assert.equal(invIn('Shed'), 2, 'undo returns the two that moved');
+assert.equal(invIn('Bottom shed'), 1, 'and leaves the orphan where it was');
+assert.equal(store.Inventory.filter((r) => r.ID === 'ORPHAN1')[0].Store, 'Bottom shed',
+  'the orphan specifically is untouched');
+
+/* --- renaming onto a place that already exists is refused, not merged.
+   Merging two places means every bag in one is now physically somewhere else,
+   which is a claim about the world the app cannot check. --- */
+placeFixture();
+assert.throws(
+  () => B.apiEditStore({ from: 'Shed', to: 'Garage' }),
+  /already a place called/i,
+  'renaming onto an existing place is refused',
+);
+assert.equal(invIn('Shed'), 2, 'and nothing moved in the attempt');
+assert.equal(placesNamed('Shed').length, 1, 'the place is still there');
+
+/* --- recolouring: one cell, and nothing else --- */
+placeFixture();
+B.apiEditStore({ from: 'Shed', colour: '#00699B', where: 'Behind the greenhouse' });
+const shed = placesNamed('Shed')[0];
+assert.equal(shed.colour, '#00699B', 'the colour changes');
+assert.equal(shed.where, 'Behind the greenhouse', 'and the description');
+assert.equal(shed.name, 'Shed', 'while the name is left alone');
+assert.equal(invIn('Shed'), 2, 'and no bag is touched by a recolour');
+
+/* --- a colour reaches a CSS custom property, so it is validated here too --- */
+placeFixture();
+B.apiEditStore({ from: 'Shed', colour: 'red; } body { display:none' });
+assert.match(placesNamed('Shed')[0].colour, /^#[0-9a-f]{3,8}$/i,
+  'a colour that is not a hex code never reaches the sheet');
+
+/* --- renaming a place with nothing in it still renames the place --- */
+placeFixture();
+B.apiEditStore({ from: 'Garage', to: 'Car port' });
+assert.equal(placesNamed('Car port').length, 1, 'an empty place renames fine');
+
+/* --- refusals --- */
+placeFixture();
+assert.throws(() => B.apiEditStore({ from: 'Shed', to: '   ' }), /needs a name/i,
+  'a blank new name is refused');
+assert.throws(() => B.apiEditStore({ from: 'Nowhere', to: 'Somewhere' }), /no place called/i,
+  'renaming something that is not there says so');
+assert.equal(invIn('Shed'), 2, 'no refusal moved anything');
+
+/* --- renaming to itself is allowed and changes nothing --- */
+placeFixture();
+B.apiEditStore({ from: 'Shed', to: 'Shed' });
+assert.equal(invIn('Shed'), 2, 'renaming to the same name is harmless');
+assert.equal(placesNamed('Shed').length, 1, 'and does not duplicate the row');
+
+seedStores = true;
 
 console.log('All backend checks passed.');

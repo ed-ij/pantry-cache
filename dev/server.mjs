@@ -110,7 +110,7 @@ function loadBackend() {
   const factory = new Function('DB', `${code}
     return { TABLES, DATE_COLUMNS, SUGGESTED_STORES, apiGetState, apiAdd, apiRemove, apiRemovePart, apiUndo,
              apiEditLot, apiSplitLot, apiRenameItem, apiRenameCategory, apiSaveStores,
-             apiDeleteItem };`);
+             apiDeleteItem, apiEditStore };`);
   return factory(DB);
 }
 

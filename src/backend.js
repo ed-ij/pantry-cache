@@ -900,6 +900,121 @@ function apiDeleteItem(p) {
   });
 }
 
+/**
+ * Moves every reference to a place, in step. The name is the join between the
+ * Stores tab and the Store column of both Inventory and History, so renaming
+ * one by hand means a find-and-replace that cannot tell a place called "Shed"
+ * from an item, a note or a category that happens to say the same word — and
+ * that gets less safe the more rows there are.
+ *
+ * `touched` records the exact rows moved, which is what lets an undo put back
+ * what this call did and nothing else.
+ */
+function renameStore_(from, to) {
+  const touched = { Inventory: [], History: [] };
+
+  const rename = function (table) {
+    return function (v, id) {
+      if (keyOf(v) !== keyOf(from)) return undefined;
+      touched[table].push(id);
+      return to;
+    };
+  };
+
+  let n = DB.updateColumn('Inventory', 'Store', rename('Inventory'));
+  n += DB.updateColumn('History', 'Store', rename('History'));
+  return { renamed: n, touched: touched };
+}
+
+/** Puts back exactly the rows the rename moved, and the row's own values. */
+function undoEditStore_(token) {
+  ['Inventory', 'History'].forEach(function (table) {
+    const only = {};
+    (token.touched[table] || []).forEach(function (id) { only[txt(id)] = true; });
+    if (!Object.keys(only).length) return;
+    // By id, not by name. A row can name a place that is not in the Stores tab
+    // at all — somebody typed it — and if that name is the one just renamed to,
+    // matching on the name would drag the stranger back with them.
+    DB.updateColumn(table, 'Store', function (v, id) {
+      return only[txt(id)] ? token.before.Name : undefined;
+    });
+  });
+
+  DB.updateById('Stores', token.forward, {
+    Name: token.before.Name,
+    Where: token.before.Where,
+    Colour: token.before.Colour,
+  });
+}
+
+/**
+ * Renames, recolours or re-describes one place. The colour and the description
+ * live in a single cell each and are cheap; the name is the hard one, which is
+ * why it goes through renameStore_ above.
+ */
+function apiEditStore(p) {
+  const from = cleanName(p && p.from);
+  if (!from) throw new Error('Which place should be changed?');
+
+  const wantsName = !!(p && p.to !== undefined && p.to !== null);
+  const to = wantsName ? cleanName(p.to) : '';
+  if (wantsName && !to) throw new Error('Every place needs a name.');
+
+  return DB.lock(function () {
+    DB.ensure();
+
+    const rows = DB.getAll('Stores');
+    const row = rows.filter(function (r) { return keyOf(txt(r.Name)) === keyOf(from); })[0];
+    if (!row) throw new Error('There is no place called ' + from + '.');
+
+    const was = txt(row.Name);
+    // Compared exactly, not by key: "Shed" to "SHED" is the same place to every
+    // lookup in the app and still a change the user asked for and should see.
+    const renaming = wantsName && to !== was;
+
+    // Only a different place can be collided with — a case change cannot.
+    if (renaming && keyOf(to) !== keyOf(from)) {
+      const clash = rows.some(function (r) { return keyOf(txt(r.Name)) === keyOf(to); });
+      if (clash) {
+        throw new Error(
+          'There is already a place called ' + to + '. Two places cannot be ' +
+          'merged by renaming one onto the other — move the bags across first.');
+      }
+    }
+
+    const before = { Name: was, Where: txt(row.Where), Colour: txt(row.Colour) };
+
+    const patch = {};
+    if (renaming) patch.Name = to;
+    if (p.where !== undefined) patch.Where = cleanName(p.where);
+    if (p.colour !== undefined) {
+      // Same strictness as reading it: this value ends up in a CSS custom
+      // property either way.
+      patch.Colour = /^#[0-9a-f]{3,8}$/i.test(txt(p.colour))
+        ? txt(p.colour)
+        : before.Colour || STORE_COLOURS[0];
+    }
+
+    const moved = renaming
+      ? renameStore_(was, to)
+      : { renamed: 0, touched: { Inventory: [], History: [] } };
+
+    // Keyed by the old name: renameStore_ deliberately does not touch Stores.
+    if (Object.keys(patch).length) DB.updateById('Stores', was, patch);
+
+    return {
+      renamed: moved.renamed,
+      name: renaming ? to : was,
+      undo: issueUndo_({
+        type: 'edit-store',
+        before: before,
+        forward: renaming ? to : was,
+        touched: moved.touched,
+      }),
+    };
+  });
+}
+
 function apiRenameItem(p) {
   const from = cleanName(p && p.from);
   const to = cleanName(p && p.to);
@@ -1021,6 +1136,11 @@ function apiUndo(handle) {
     if (token.type === 'delete-item') {
       DB.append('Items', [token.row]);
       return { undone: 'delete-item' };
+    }
+
+    if (token.type === 'edit-store') {
+      undoEditStore_(token);
+      return { ok: true };
     }
 
     if (token.type === 'rename-item') {

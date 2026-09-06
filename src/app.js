@@ -779,11 +779,12 @@ function renderSettings() {
         return '<div class="row row-line">' + dot(f.colour) +
           '<div class="spacer">' + esc(f.name) +
             (f.where ? '<span class="muted small"> &middot; ' + esc(f.where) + '</span>' : '') +
-          '</div></div>';
+          '</div>' +
+          '<button class="btn btn-ghost btn-compact" data-act="open-store-edit" ' +
+            'data-name="' + esc(f.name) + '">Edit</button>' +
+          '</div>';
       }).join('') +
       '<button class="btn btn-ghost" data-act="settings-add-place">Add a place</button>' +
-      '<p class="muted small" style="margin:0">Renaming or recolouring one is done in the ' +
-        'spreadsheet for now.</p>' +
     '</div>' +
 
     '<div class="card stack">' +
@@ -1489,6 +1490,7 @@ function renderModal() {
   if (m.kind === 'unit') return modalUnit(m);
   if (m.kind === 'edit') return modalEdit(m);
   if (m.kind === 'split') return modalSplit(m);
+  if (m.kind === 'store') return modalStore(m);
   if (m.kind === 'rename') return modalRename(m);
   return '';
 }
@@ -1847,6 +1849,55 @@ function renameCollision(m) {
   }
   var cat = S.categories.filter(function (c) { return norm(c) === to; })[0];
   return cat ? 'There is already a group called &ldquo;' + esc(cat) + '&rdquo;. The two will be merged.' : null;
+}
+
+function modalStore(m) {
+  var palette = S.storeColours.length ? S.storeColours : ['#5F8A20'];
+  var taken = S.stores.some(function (f) {
+    return norm(f.name) !== norm(m.from) && norm(f.name) === norm(tidyName(m.name));
+  });
+
+  var swatches = palette.map(function (c) {
+    var on = (m.colour || '').toLowerCase() === c.toLowerCase();
+    return '<button class="swatch' + (on ? ' is-on' : '') + '" style="--fz:' + esc(c) + '" ' +
+      'data-act="store-edit-colour" data-colour="' + esc(c) + '" ' +
+      'aria-label="Colour ' + esc(c) + '" aria-pressed="' + (on ? 'true' : 'false') + '"></button>';
+  }).join('');
+
+  var bags = S.inventory.filter(function (l) { return norm(l.store) === norm(m.from); }).length;
+
+  return wrap(
+    '<h2 class="modal-title">' + esc(m.from) + '</h2>' +
+    '<p class="muted" style="margin-top:0">' +
+      (bags
+        ? 'Renaming moves ' + bags + (bags === 1 ? ' bag' : ' bags') + ' with it, and everything ' +
+          'taken out of here before now. It is one change, and it can be undone.'
+        : 'Nothing is kept here at the moment.') +
+    '</p>' +
+    (taken
+      ? '<div class="banner" style="display:block;margin-top:12px">There is already a place called ' +
+        esc(tidyName(m.name)) + '. Two places cannot be merged by renaming one onto the other.</div>'
+      : '') +
+
+    '<div class="stack" style="margin-top:14px">' +
+      '<div><label class="label" for="store-edit-name">What is it called?</label>' +
+        '<input class="input input-hero" id="store-edit-name" type="text" ' +
+          'value="' + esc(m.name) + '" data-act="store-edit-name"></div>' +
+      '<div><label class="label" for="store-edit-where">Where is it? ' +
+        '<span class="muted small">optional</span></label>' +
+        '<input class="input" id="store-edit-where" type="text" placeholder="Chest freezer by the door" ' +
+          'value="' + esc(m.where) + '" data-act="store-edit-where"></div>' +
+      '<div><span class="label">Which colour marks it?</span>' +
+        '<div class="swatches">' + swatches + '</div></div>' +
+    '</div>' +
+
+    '<div class="row" style="margin-top:20px">' +
+      '<button class="btn btn-ghost" data-act="close-modal">Cancel</button><span class="spacer"></span>' +
+      '<button class="btn btn-primary" data-act="do-edit-store"' +
+        (tidyName(m.name) && !taken && !S.busy ? '' : ' disabled') + '>' +
+        (S.busy ? 'Saving&hellip;' : 'Save') + '</button>' +
+    '</div>'
+  );
 }
 
 function modalRename(m) {
@@ -2263,6 +2314,22 @@ var ACTIONS = {
   'toggle-editing': function () {
     setState({ editing: !S.editing });
   },
+  'open-store-edit': function (d) {
+    var f = S.stores.filter(function (x) { return x.name === d.name; })[0];
+    if (!f) return;
+    setState({ modal: { kind: 'store', from: f.name, name: f.name, where: f.where, colour: f.colour } });
+  },
+  'store-edit-name': function (d, el) {
+    setState({ modal: Object.assign({}, S.modal, { name: el.value }) });
+  },
+  'store-edit-where': function (d, el) {
+    setState({ modal: Object.assign({}, S.modal, { where: el.value }) });
+  },
+  'store-edit-colour': function (d) {
+    setState({ modal: Object.assign({}, S.modal, { colour: d.colour }) });
+  },
+  'do-edit-store': function () { doEditStore(); },
+
   'settings-add-place': function () {
     // The first-run screen is the add form; sending them to it with the tab
     // bar still available means it is a detour rather than a mode.
@@ -2503,6 +2570,31 @@ function doCheckUpdates() {
     // place, rather than as a red toast over whatever else is on screen.
     setState({ version: { error: 'Could not check just now. The spreadsheet menu can also tell you.' } });
   });
+}
+
+function doEditStore() {
+  var m = S.modal;
+  var to = tidyName(m.name);
+  if (!to) return;
+
+  setState({ busy: true, modal: null });
+  api('apiEditStore', { from: m.from, to: to, where: tidyName(m.where), colour: m.colour })
+    .then(function (res) {
+      done();
+      // A place name is on every bag, every filter chip and the header total,
+      // so re-read rather than trying to patch each one.
+      return load(false).then(function () {
+        // The filter may have been pointing at the old name.
+        if (norm(S.store) === norm(m.from)) S.store = res.name;
+        toast(res.renamed
+          ? 'Renamed to ' + res.name + ', and moved ' + res.renamed +
+            (res.renamed === 1 ? ' row' : ' rows') + ' with it'
+          : res.name + ' updated', res.undo);
+      });
+    }).catch(function (e) {
+      S.busy = false;
+      fail(e);
+    });
 }
 
 function doDeleteItem(name) {
