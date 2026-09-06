@@ -1764,8 +1764,15 @@ function renderTake() {
     if (month !== lastMonth) {
       lastMonth = month;
       headHtml = '<div class="group-head">' +
+        // The month stays whichever way the setting is set: it is what the
+        // list is grouped by, and a heading that stops naming it leaves the
+        // page with no calendar date on it anywhere. The age joins it when
+        // that is what was asked for.
         (l.dateIn
-          ? esc(whenText(l))
+          ? esc(fmtMonth(l.dateIn)) +
+            (S.dateStyle === 'age'
+              ? ' <span class="group-meta">' + esc(ageText(l.dateIn)) + '</span>'
+              : '')
           : 'No date recorded <span class="group-meta">fix these in the spreadsheet</span>') +
         '</div>';
     }
@@ -1778,14 +1785,21 @@ function renderTake() {
           'aria-label="' + esc(l.item + ', ' + lotSize(l) + ', ' + l.store + ' store') + '">' +
           '<span class="pick-box" aria-hidden="true">' + (on ? '&#10003;' : '') + '</span>' +
           '<span class="row-main">' +
+            // Name, place and warning on one line. With the date gone to the
+            // heading the second line held a single badge and a lot of air.
+            //
+            // The place is dropped when the list is already filtered to one, as
+            // In store has always done: standing at the Shed, a row that says
+            // Shed says nothing, and on a phone it is what pushes the line to
+            // wrap.
             '<span class="row-name">' + esc(l.item) +
+              (S.store === 'all' ? ' ' + storeBadge(l.store) : '') +
               (first ? ' <span class="badge badge-warm">use first</span>' : '') + '</span>' +
-            // No date here: this list is grouped by it, so the heading above
-            // has just said it, and saying it again on every row is the clutter
-            // the month rounding was meant to clear.
-            '<span class="row-meta">' + storeBadge(l.store) +
-            (l.dateIn ? '' : ' date not recorded') +
-            (l.note ? ' &middot; ' + esc(l.note) : '') + '</span>' +
+            (l.note || !l.dateIn
+              ? '<span class="row-meta">' +
+                (l.dateIn ? '' : 'date not recorded') +
+                (l.note ? (l.dateIn ? '' : ' &middot; ') + esc(l.note) : '') + '</span>'
+              : '') +
           '</span>' +
           '<span class="row-right"><span class="row-strong">' + esc(lotSize(l)) + '</span></span>' +
         '</button>' +
