@@ -12,7 +12,7 @@ Keep track of home-grown fruit and vegetables across several domestic stores,
 replacing a hand-kept spreadsheet. The primary user is not technically confident
 and works standing at a store with a tablet.
 
-It answers three questions and no others:
+The tab bar answers three questions, and gains no fourth:
 
 | | |
 | --- | --- |
@@ -20,13 +20,26 @@ It answers three questions and no others:
 | **In store** | What have I got? Grouped by category and item. |
 | **Take out** | What has been in there longest, and remove what I have used. |
 
+Those three are what the app is for, and they are what it is open to do while
+somebody is standing at a store with cold hands. Everything else it has grown —
+somewhere to manage places, tidy the catalogue, read the version, change the
+theme — sits behind the cog, off that path and costing the three screens
+nothing.
+
+That is the test for anything new. If it answers one of the three questions it
+earns room on the screen that asks it; if it does not, it goes behind the cog,
+or it does not go in. The older form of this rule was "three questions and no
+others", which had already stopped being true — and a rule everything quietly
+breaks has stopped being a rule.
+
 ## Shape
 
 ```
 Google Sheet          the database — four tabs, plain columns, hand-editable
    └─ Apps Script     bound to that sheet
-        ├─ Code.gs    server logic; the only thing that touches the sheet
-        └─ Index/Css/Js/Setup   the web app, served at a private URL
+        ├─ Code.gs          server logic; the only thing that touches the sheet
+        ├─ Index/Css/Js     the web app, served at a private URL
+        └─ Setup/Update     the two dialogs the spreadsheet menu opens
 ```
 
 One spreadsheet, one deployment, one household. No shared backend, no accounts,
@@ -55,7 +68,8 @@ the record of what the garden produced accumulates on its own.
 ## Operations
 
 `apiGetState`, `apiAdd`, `apiRemove`, `apiRemovePart`, `apiEditLot`,
-`apiSplitLot`, `apiRenameItem`, `apiRenameCategory`, `apiUndo`.
+`apiSplitLot`, `apiMoveBags`, `apiSaveStores`, `apiEditStore`, `apiRenameItem`,
+`apiRenameCategory`, `apiDeleteItem`, `apiUndo`.
 
 Every mutating call returns an **undo handle** — an opaque string. The token
 itself stays on the server, is accepted once, and expires, so a handle cannot be
@@ -117,9 +131,12 @@ not about which tab she is on.
 heads is not ten of anything, so mixed sets show their weight, or each unit
 listed separately.
 
-**8. Stores are defined only in the `Stores` tab.** The app never invents
-one. Colours are picked for the light theme and lightened automatically for
-dark, so one value cannot be wrong on one of them.
+**8. The `Stores` tab is the only definition of a store.** The app writes to
+it — the first-run screen and *Places* both add rows — but never invents one
+from a value it finds in `Inventory`, so a typo in the `Store` column surfaces
+as an orphaned bag rather than quietly becoming a fourth store. Colours are
+picked for the light theme and lightened automatically for dark, so one value
+cannot be wrong on one of them.
 
 **9. Columns are read by name, and new ones are appended.** Row 1 is the
 contract: every read and write looks up its column by header text, so she can
@@ -167,8 +184,9 @@ deliberately. Two things follow that are worth stating: taking access away means
 a new deployment and therefore a new URL, re-added to the tablet by hand; and
 the realistic exposure is a link left in an email or a screenshot rather than a
 decision anyone made. The alternative — *Anyone with a Google account* — costs
-one sign-in. `doGet` sets `SAMEORIGIN`, so the page cannot be framed by another
-site, which anonymous write access would otherwise invite.
+one sign-in. `doGet` sets the restrictive frame mode — `XFrameOptionsMode.DEFAULT`, the
+enum holding only that and `ALLOWALL` — so the page cannot be framed by
+another site, which anonymous write access would otherwise invite.
 
 **Copies update by pulling, never by being pushed to.** Nothing propagates on
 its own — that is constraint 11 doing its job, and a bad release cannot reach
@@ -177,9 +195,13 @@ GitHub what the current build is, compares it against the one stamped into this
 copy, and hands over the files to paste. Every copy can say what it is running;
 none of them changes without being told to.
 
-**Stores cannot be renamed from the app.** Items and categories can. Renaming a
-store means editing the `Stores` tab *and* find-and-replacing the `Store`
-column, or every existing bag is orphaned.
+**Renaming is a rewrite, not a reference.** Items, categories and stores are
+each stored as text on every row that carries them, so renaming one rewrites
+every matching row in `Inventory` and `History`. Undo reverts exactly the rows
+a rename touched, by id, rather than renaming back by name — which is the only
+version that survives a second rename landing in between. Editing the `Stores`
+tab by hand still orphans every bag, so a rename has to go through the app or
+be a find-and-replace on both tabs.
 
 **Scale.** Designed for hundreds of bags. `History` grows for ever and is never
 pruned. Reads fetch whole tabs; renames rewrite whole columns. At a few thousand
