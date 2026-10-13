@@ -380,9 +380,9 @@ var S = {
   // 'date' or 'age' — what a list row says about when a bag went in.
   dateStyle: 'date',
   // Off by default: browsing is the common case and rename pencils beside every
-  // heading are noise for it. On, the editing affordances appear and catalogue
+  // heading are noise for it. On, the ticks appear and the move bar follows
   // entries with nothing under them become visible so they can be tidied up.
-  editing: false,
+  moveMode: false,
   // Bags ticked for moving on In store. Separate from S.selected, which
   // belongs to Take out and survives a tab change.
   moving: {},
@@ -520,7 +520,7 @@ function render() {
   var modalOpen = !!S.modal;
   if (!modalOpen || !lastRenderHadModal) {
     $('#topbar-right').innerHTML = renderTopRight();
-    $('#tabbar').innerHTML = (isFirstRun() || S.tab === 'settings-place') ? '' : renderTabs();
+    $('#tabbar').innerHTML = (isFirstRun() || S.tab === 'settings-new-place') ? '' : renderTabs();
     $('#panel').innerHTML = S.ready ? renderPanel() : renderLoading();
   }
   lastRenderHadModal = modalOpen;
@@ -631,11 +631,19 @@ function renderLoading() {
 }
 
 function settingsButton() {
-  var on = S.tab === 'settings';
-  return '<button class="icon-btn' + (on ? ' is-on' : '') + '" data-act="' +
-    (on ? 'settings-close' : 'settings-open') + '" ' +
-    'aria-label="' + (on ? 'Close settings' : 'Settings') + '" ' +
-    'title="' + (on ? 'Close settings' : 'Settings') + '">&#9881;</button>';
+  // Three states, because there are three places to be: outside, at the menu,
+  // and one screen in. A back arrow at the menu would be a lie about where it
+  // goes, and a cog on a sub-screen would skip the menu you came through.
+  if (S.tab === 'settings') {
+    return '<button class="icon-btn is-on" data-act="settings-back" ' +
+      'aria-label="Close settings" title="Close settings">&#9881;</button>';
+  }
+  if (inSettings()) {
+    return '<button class="icon-btn" data-act="settings-back" ' +
+      'aria-label="Back to settings" title="Back">&#8249;</button>';
+  }
+  return '<button class="icon-btn" data-act="settings-open" ' +
+    'aria-label="Settings" title="Settings">&#9881;</button>';
 }
 
 function renderTopRight() {
@@ -985,7 +993,7 @@ function renderFirstRun() {
 
   var named = rows.filter(function (r) { return r.name.trim(); }).length;
 
-  var adding = S.tab === 'settings-place';
+  var adding = S.tab === 'settings-new-place';
 
   return '<div class="stack">' +
     '<div class="card">' +
@@ -1034,98 +1042,212 @@ function dateChoice(id, label) {
     'aria-pressed="' + (on ? 'true' : 'false') + '">' + label + '</button>';
 }
 
-/** Catalogue entries with nothing under them — the things editing mode is for. */
+/**
+ * The cog is a menu, not a page.
+ *
+ * It had grown into six cards of unrelated things on one scroll — two
+ * preferences, two lists you work in, a version number, and a warning that the
+ * totals on a different screen were wrong — because there was nowhere else for
+ * any of them to go. Only the first two were settings at all.
+ *
+ * So every row is a destination now, carrying the value you would have opened
+ * it to read. That is the bargain the store chips already make by carrying
+ * their own totals: a list of places to go, worth reading where it stands.
+ */
+
+/** Every screen behind the cog, so one test covers the back arrow and the tabs. */
+function inSettings() { return S.tab.slice(0, 8) === 'settings'; }
+
+/** A sub-screen goes back to the menu; the menu goes back where you came from. */
+function backFrom(tab) {
+  if (tab === 'settings') return settingsCameFrom || 'view';
+  if (tab === 'settings-new-place') return 'settings-places';
+  return 'settings';
+}
+
+function screenHead(title) {
+  return '<h2 class="screen-title">' + esc(title) + '</h2>';
+}
+
+/** One menu row: where it goes, and what you would have opened it to find. */
+function menuRow(tab, name, value, sub) {
+  return '<button class="row-btn" data-act="go" data-tab="' + tab + '">' +
+    '<span class="row-main"><span class="row-name">' + esc(name) + '</span>' +
+      (sub ? '<span class="row-meta">' + esc(sub) + '</span>' : '') +
+    '</span>' +
+    (value ? '<span class="row-right"><span class="row-sub">' + esc(value) + '</span></span>' : '') +
+    '<span class="row-chevron">&rsaquo;</span>' +
+    '</button>';
+}
+
+/** Catalogue entries with no bags under them right now. */
 function unstockedItems() {
   var held = {};
   S.inventory.forEach(function (l) { held[norm(l.item)] = 1; });
   return S.items.filter(function (i) { return !held[norm(i.name)]; });
 }
 
-function renderSettings() {
-  var spare = unstockedItems();
+var THEME_NAMES = { auto: 'Match the tablet', light: 'Light', dark: 'Dark' };
 
-  var spareRows = spare.length
-    ? spare.map(function (i) {
-        return '<div class="row row-line">' +
-          '<div class="spacer">' + esc(i.name) +
-            '<span class="muted small"> &middot; ' + esc(i.category) + '</span></div>' +
-          '<button class="btn btn-ghost btn-compact" data-act="open-rename" data-scope="item" ' +
-            'data-from="' + esc(i.name) + '">Rename</button>' +
-          (i.everStored
-            ? '<span class="muted small" title="It has been stored before, so the ' +
-              'type-ahead will keep suggesting it whatever the item list says">kept</span>'
-            : '<button class="btn btn-ghost btn-compact" data-act="delete-item" ' +
-              'data-name="' + esc(i.name) + '">Remove</button>') +
-          '</div>';
-      }).join('')
-    : '<p class="muted small">Nothing to tidy up &mdash; every item in the list has bags under it.</p>';
-
-  var kept = spare.filter(function (i) { return i.everStored; }).length;
-
+function renderMenu() {
+  var spare = unstockedItems().length;
   var v = S.version;
 
   return '<div class="stack">' +
+    screenHead('Settings') +
 
+    '<div class="card card-flush">' +
+      menuRow('settings-places', 'Places',
+        S.stores.length + (S.stores.length === 1 ? ' place' : ' places')) +
+      menuRow('settings-items', 'Items',
+        S.items.length + (S.items.length === 1 ? ' thing' : ' things'),
+        spare ? spare + ' with nothing stored' : '') +
+    '</div>' +
+
+    '<div class="card card-flush">' +
+      menuRow('settings-look', 'How it looks',
+        (THEME_NAMES[S.theme] || THEME_NAMES.auto) + ' · ' +
+        (S.dateStyle === 'age' ? 'ages' : 'dates')) +
+      menuRow('settings-copy', 'This copy',
+        v && v.newer ? 'Update available'
+          : v && v.build ? fmtDate(String(v.build).slice(0, 10))
+          : 'not checked') +
+    '</div>' +
+
+    renderSheetLink() +
+  '</div>';
+}
+
+/* --------------------------------------------------------------- places */
+
+function renderPlacesScreen() {
+  return '<div class="stack">' +
+    screenHead('Places') +
+    '<div class="card card-flush">' +
+      S.stores.map(function (f) {
+        return '<button class="row-btn" data-act="open-store-edit" data-name="' + esc(f.name) + '" ' +
+          'aria-label="Edit ' + esc(f.name) + '">' +
+          dot(f.colour) +
+          '<span class="row-main"><span class="row-name">' + esc(f.name) + '</span>' +
+            (f.where ? '<span class="row-meta">' + esc(f.where) + '</span>' : '') +
+          '</span>' +
+          '<span class="row-chevron">&rsaquo;</span></button>';
+      }).join('') +
+    '</div>' +
+    '<button class="btn btn-block" data-act="settings-add-place">Add a place</button>' +
+  '</div>';
+}
+
+/* ---------------------------------------------------------------- items */
+
+/**
+ * The whole catalogue, which until now had no screen anywhere: the only view
+ * of the `Items` tab was the handful with nothing stored, behind a toggle,
+ * inside settings. It is where every suggestion on Put in comes from, so being
+ * able to look at it is the point, and tidying it is the exception.
+ */
+function renderItemsScreen() {
+  var held = {};
+  S.inventory.forEach(function (l) {
+    var k = norm(l.item);
+    held[k] = (held[k] || 0) + 1;
+  });
+
+  var cats = {};
+  S.items.forEach(function (i) {
+    var c = i.category || 'Other';
+    (cats[c] = cats[c] || []).push(i);
+  });
+  var names = Object.keys(cats).sort(function (a, b) { return a.localeCompare(b); });
+
+  if (!names.length) {
+    return '<div class="stack">' + screenHead('Items') +
+      '<div class="empty"><span class="empty-mark">&#128230;</span>' +
+      'Nothing here yet. The list fills itself as things go in.</div></div>';
+  }
+
+  var kept = 0;
+  var sections = names.map(function (cat) {
+    var rows = cats[cat].slice()
+      .sort(function (a, b) { return a.name.localeCompare(b.name); })
+      .map(function (i) {
+        var n = held[norm(i.name)] || 0;
+        // Remove is offered only where it will visibly work. The type-ahead
+        // reads History as well as Items, so deleting the catalogue row of
+        // something stored before would not stop it being suggested — and
+        // History is the record, not this screen's to edit.
+        if (!n && i.everStored) kept++;
+        // A row that opens a dialog, like a bag or a place — rather than a row
+        // with its actions hung off the end of it. Two 68px icon buttons made
+        // an 88px row out of one line of text, and a list you scroll to find
+        // something in cannot afford that.
+        return '<button class="row-btn" data-act="open-item" data-name="' + esc(i.name) + '" ' +
+          'aria-label="' + esc(i.name) + ', ' +
+          (n ? n + (n === 1 ? ' bag' : ' bags') : 'nothing stored') + '">' +
+          '<span class="row-main"><span class="row-name">' + esc(i.name) + '</span>' +
+            '<span class="row-meta">' +
+            (n ? n + (n === 1 ? ' bag' : ' bags')
+               : i.everStored ? 'nothing stored &middot; kept' : 'nothing stored') +
+            '</span></span>' +
+          '<span class="row-chevron">&rsaquo;</span></button>';
+      }).join('');
+
+    return '<div class="group-head">' + esc(cat) +
+      '<span class="spacer"></span>' +
+      '<button class="icon-btn" data-act="open-rename" data-scope="category" ' +
+        'data-from="' + esc(cat) + '" aria-label="Rename ' + esc(cat) + '" ' +
+        'title="Rename ' + esc(cat) + '">&#9998;</button>' +
+      '</div>' + rows;
+  }).join('');
+
+  return '<div class="stack">' +
+    screenHead('Items') +
+    '<p class="muted small" style="margin:0">What <b>Put in</b> suggests from. A rename ' +
+      'reaches every bag in store and every row in History, so past records keep up.</p>' +
+    '<div class="card card-flush">' + sections + '</div>' +
+    (kept
+      ? '<p class="muted small" style="margin:0">Marked <b>kept</b> means it has been stored ' +
+        'before. Those stay in the suggestions whatever this list says, because that ' +
+        'history is the record and is not this screen\'s to edit.</p>'
+      : '') +
+  '</div>';
+}
+
+/* --------------------------------------------------------- how it looks */
+
+function renderLookScreen() {
+  return '<div class="stack">' +
+    screenHead('How it looks') +
     '<div class="card stack">' +
-      '<div class="card-title">How it looks</div>' +
+      '<div class="label">Theme</div>' +
       '<div class="chips">' +
         themeChoice('auto', 'Match the tablet') +
         themeChoice('light', 'Light') +
         themeChoice('dark', 'Dark') +
       '</div>' +
-      '<div style="margin-top:6px">' +
-        '<span class="label">Dates in the lists</span>' +
-        '<div class="chips">' +
-          dateChoice('date', 'When it went in') +
-          dateChoice('age', 'How long ago') +
-        '</div>' +
-        '<p class="muted small" style="margin:8px 0 0">Either way the lists show the month. ' +
-          'The exact day is on the bag itself, behind the arrow.</p>' +
+    '</div>' +
+    '<div class="card stack">' +
+      '<div class="label">Dates in the lists</div>' +
+      '<div class="chips">' +
+        dateChoice('date', 'When it went in') +
+        dateChoice('age', 'How long ago') +
       '</div>' +
+      '<p class="muted small" style="margin:8px 0 0">Take out keeps its month headings ' +
+        'either way. The exact day is on the bag itself, behind the arrow.</p>' +
     '</div>' +
+  '</div>';
+}
 
-    '<div class="card stack">' +
-      '<div class="row">' +
-        '<div class="spacer">' +
-          '<div class="card-title">Editing</div>' +
-          '<p class="muted small" style="margin:6px 0 0">Shows the rename controls, and lists ' +
-            'anything left in the item list with no bags under it.</p>' +
-        '</div>' +
-        '<button class="btn ' + (S.editing ? 'btn-warm' : 'btn-ghost') + ' btn-compact" ' +
-          'data-act="toggle-editing" aria-pressed="' + (S.editing ? 'true' : 'false') + '">' +
-          (S.editing ? 'On' : 'Off') + '</button>' +
-      '</div>' +
-      (S.editing
-        ? '<div class="stack" style="margin-top:6px">' +
-            '<div class="label">Items with nothing stored</div>' + spareRows +
-            (kept
-              ? '<p class="muted small" style="margin:0">Marked <b>kept</b> means it has been ' +
-                'stored before. Those stay in the suggestions whatever the item list says, ' +
-                'because that history is the record and is not this screen\'s to edit.</p>'
-              : '') +
-          '</div>'
-        : '') +
-    '</div>' +
+/* ------------------------------------------------------------ this copy */
 
+function renderCopyScreen() {
+  var v = S.version;
+  return '<div class="stack">' +
+    screenHead('This copy') +
     '<div class="card stack">' +
-      '<div class="card-title">Places</div>' +
-      S.stores.map(function (f) {
-        return '<div class="row row-line">' + dot(f.colour) +
-          '<div class="spacer">' + esc(f.name) +
-            (f.where ? '<span class="muted small"> &middot; ' + esc(f.where) + '</span>' : '') +
-          '</div>' +
-          '<button class="btn btn-ghost btn-compact" data-act="open-store-edit" ' +
-            'data-name="' + esc(f.name) + '">Edit</button>' +
-          '</div>';
-      }).join('') +
-      '<button class="btn btn-ghost" data-act="settings-add-place">Add a place</button>' +
-    '</div>' +
-
-    '<div class="card stack">' +
-      '<div class="card-title">This copy</div>' +
       (v
         ? '<div class="row row-line"><div class="spacer">Version</div>' +
-            '<span class="muted small">' + esc(v.build ? fmtDate(String(v.build).slice(0, 10)) : '\u2014') +
+            '<span class="muted small">' + esc(v.build ? fmtDate(String(v.build).slice(0, 10)) : '—') +
             (v.commit ? ' &middot; ' + esc(v.commit) : '') + '</span></div>' +
           (v.branch && v.branch !== 'main'
             ? '<div class="muted small">Following <b>' + esc(v.branch) + '</b>, not a released build.</div>'
@@ -1141,17 +1263,18 @@ function renderSettings() {
         : '<button class="btn btn-ghost" data-act="check-updates">' +
           (S.busy ? 'Checking&hellip;' : 'Check for updates') + '</button>') +
     '</div>' +
-
-    renderProblems() +
-    renderSheetLink() +
   '</div>';
 }
 
 function renderPanel() {
   if (S.loadFailed) return renderLoadFailed();
   if (isFirstRun()) return renderFirstRun();
-  if (S.tab === 'settings') return renderSettings();
-  if (S.tab === 'settings-place') return renderFirstRun();
+  if (S.tab === 'settings') return renderMenu();
+  if (S.tab === 'settings-places') return renderPlacesScreen();
+  if (S.tab === 'settings-items') return renderItemsScreen();
+  if (S.tab === 'settings-look') return renderLookScreen();
+  if (S.tab === 'settings-copy') return renderCopyScreen();
+  if (S.tab === 'settings-new-place') return renderFirstRun();
   if (S.tab === 'add') return renderAdd();
   if (S.tab === 'view') return renderView();
   return renderTake();
@@ -1480,11 +1603,30 @@ function renderRecentAdds() {
 
 /* ----------------------------------------------------------------- VIEW */
 
+/**
+ * The one mode In store has. It used to be reached by opening settings,
+ * switching "Editing" on and coming back — a switch that also governed the
+ * rename pencils here and a catalogue list over there, three jobs under one
+ * name. Renaming lives on the Items screen now, so what is left is this, and
+ * it is named after itself.
+ */
+function moveButton(inv) {
+  if (!inv.length) return '';
+  return '<button class="btn ' + (S.moveMode ? 'btn-warm' : 'btn-ghost') + '" ' +
+    'data-act="toggle-move-mode" aria-pressed="' + (S.moveMode ? 'true' : 'false') + '">' +
+    (S.moveMode ? 'Done' : 'Move') + '</button>';
+}
+
 function renderView() {
   var inv = filtered();
   var q = norm(S.search);
 
   var head = '<div class="stack">' +
+    // Above the tiles, because what it says is that the tiles are wrong. It
+    // used to be inside settings, one tap off a screen nobody opens, while
+    // In store went on showing a confident total built from cells that could
+    // not be read — the exact thing renderTopRight refuses to do.
+    renderProblems() +
     '<div class="summary">' +
       totalStat(inv) +
       // Entries before unweighed entries: the second qualifies the first, and a
@@ -1493,7 +1635,10 @@ function renderView() {
       unweighedStat(inv) +
     '</div>' +
     storeFilter('') +
-    searchBox('Search the stores\u2026');
+    '<div class="row">' +
+      '<div class="spacer">' + searchBox('Search the stores\u2026') + '</div>' +
+      moveButton(inv) +
+    '</div>';
 
   var body = inv.length
     ? renderByItem(inv)
@@ -1562,20 +1707,20 @@ function renderProblems() {
     '</div>' +
     '<ul style="margin:8px 0 0;padding-left:20px;font-weight:500">' + lines + more + '</ul>' +
     '<div class="small" style="margin-top:8px;font-weight:500">' +
-      'Those are being counted as nothing. Open the spreadsheet below to put them right.</div>' +
+      'Those are being counted as nothing, so every total on this page is short by whatever they hold.</div>' +
+    (S.sheetUrl
+      ? '<a class="btn btn-compact" style="margin-top:10px" href="' + esc(S.sheetUrl) + '" ' +
+        'target="_blank" rel="noopener">Open the spreadsheet</a>'
+      : '') +
     '</div>';
 }
 
 /**
- * The spreadsheet is the real database, so give it a visible door: this is how
- * you add a store, rename something, or fix a mistake the app cannot.
- */
-/**
- * Only on In store, only while editing, and only once something is ticked —
- * so nothing about the ordinary browsing screen changes until it is asked for.
+ * Only on In store, only in Move mode, and only once something is ticked — so
+ * nothing about the ordinary browsing screen changes until it is asked for.
  */
 function renderMoveBar() {
-  if (!S.editing || S.tab !== 'view') return '';
+  if (!S.moveMode || S.tab !== 'view') return '';
   var picked = Object.keys(S.moving);
   var lots = picked.map(lotById).filter(Boolean);
   if (!lots.length) return '';
@@ -1599,11 +1744,15 @@ function renderMoveBar() {
   '</div>';
 }
 
+/**
+ * The spreadsheet is the real database, so give it a visible door: this is
+ * where you fix what the app cannot, or read back over past years.
+ */
 function renderSheetLink() {
   return '<div class="card">' +
     '<div class="card-title">Where all this is kept</div>' +
     '<p class="muted small" style="margin:6px 0 14px">Everything lives in a Google Sheet you can open like a spreadsheet. ' +
-    'That is where you add a new store, correct a date, or check back over past years.</p>' +
+    'That is where you correct something the app will not, or read back over past years.</p>' +
     (S.sheetUrl
       ? '<a class="btn btn-block" href="' + esc(S.sheetUrl) + '" target="_blank" rel="noopener">Open the spreadsheet</a>'
       : '<div class="muted small">(The link appears once the app is running from the spreadsheet.)</div>') +
@@ -1661,11 +1810,6 @@ function renderByItem(inv) {
     return '<div class="group-head">' + esc(cat) +
       ' <span class="group-meta">' + (size === '—' ? '' : esc(size) + ' &middot; ') +
       lots.length + (lots.length === 1 ? ' bag' : ' bags') + '</span>' +
-      '<span class="spacer"></span>' +
-      (S.editing
-        ? '<button class="icon-btn" data-act="open-rename" data-scope="category" data-from="' + esc(cat) + '" ' +
-          'aria-label="Rename ' + esc(cat) + '" title="Rename ' + esc(cat) + '">&#9998;</button>'
-        : '') +
       '</div>' + rows;
   }).join('');
 
@@ -1691,8 +1835,8 @@ function itemRow(lots, key, storeContext) {
 
   var detail = open
     ? '<div class="lots">' + sorted.map(function (l, i) {
-        return '<div class="lot' + (S.editing && S.moving[l.id] ? ' is-picked' : '') + '">' +
-          (S.editing
+        return '<div class="lot' + (S.moveMode && S.moving[l.id] ? ' is-picked' : '') + '">' +
+          (S.moveMode
             ? '<button class="tick" data-act="toggle-move" ' +
               'data-id="' + esc(l.id) + '" role="checkbox" ' +
               'aria-checked="' + (S.moving[l.id] ? 'true' : 'false') + '" ' +
@@ -1714,22 +1858,31 @@ function itemRow(lots, key, storeContext) {
             'aria-label="More about this bag">&rsaquo;</button>' +
           '</div>';
       }).join('') +
-      (S.editing
-        ? '<div class="lots-foot">' +
-          '<button class="btn btn-ghost btn-compact" style="padding-left:0" ' +
-          'data-act="open-rename" data-scope="item" data-from="' + esc(lots[0].item) + '">' +
-          '&#9998; Rename &ldquo;' + esc(lots[0].item) + '&rdquo;</button>' +
-        '</div>'
-        : '') + '</div>'
+      '</div>'
     : '';
 
-  return '<button class="row-btn" data-act="toggle-open" data-key="' + esc(key) + '">' +
+  var head = '<button class="row-btn" data-act="toggle-open" data-key="' + esc(key) + '">' +
     '<span class="row-main"><span class="row-name">' + esc(lots[0].item) + '</span>' +
     '<span class="row-meta">' + meta +
       (oldest ? ' &middot; oldest ' + esc(fmtMonth(oldest.dateIn)) : ' &middot; no dates recorded') + '</span></span>' +
     '<span class="row-right"><span class="row-strong">' + esc(totals[0]) + '</span>' +
     (totals.length > 1 ? '<span class="row-sub">' + esc(totals.slice(1).join(' \u00b7 ')) + '</span>' : '') + '</span>' +
-    '<span class="row-chevron">' + (open ? '&#9662;' : '&rsaquo;') + '</span></button>' + detail;
+    '<span class="row-chevron">' + (open ? '&#9662;' : '&rsaquo;') + '</span></button>';
+
+  // The unit people think in is the item — "the raspberries go to the Kitchen"
+  // — not the bag. Without this, emptying the Shed means expanding every item
+  // in it and ticking each bag one at a time.
+  if (S.moveMode) {
+    var allOn = lots.every(function (l) { return S.moving[l.id]; });
+    head = '<div class="row-pick">' +
+      '<button class="tick" data-act="toggle-move-item" data-key="' + esc(key) + '" ' +
+        'role="checkbox" aria-checked="' + (allOn ? 'true' : 'false') + '" ' +
+        'aria-label="Choose every bag of ' + esc(lots[0].item) + ' shown here">' +
+        '<span class="pick-box">' + (allOn ? '&#10003;' : '') + '</span></button>' +
+      head + '</div>';
+  }
+
+  return head + detail;
 }
 
 /* ----------------------------------------------------------------- TAKE */
@@ -1886,6 +2039,7 @@ function renderModal() {
   if (m.kind === 'move') return modalMove(m);
   if (m.kind === 'store') return modalStore(m);
   if (m.kind === 'rename') return modalRename(m);
+  if (m.kind === 'item') return modalItem(m);
   return '';
 }
 
@@ -2366,6 +2520,34 @@ function modalStore(m) {
   );
 }
 
+/**
+ * What can be done to one catalogue entry. Remove is offered only where it
+ * will visibly work: the type-ahead reads History as well as Items, so
+ * deleting the row of something stored before would not stop it being
+ * suggested, and the reason is worth saying rather than greying a button out.
+ */
+function modalItem(m) {
+  return wrap(
+    '<h2 class="modal-title">' + esc(m.name) + '</h2>' +
+    '<p class="muted" style="margin-top:0">' + esc(m.category) + ' &middot; ' +
+      (m.bags ? m.bags + (m.bags === 1 ? ' bag in store' : ' bags in store') : 'nothing in store') +
+    '</p>' +
+    '<div class="stack" style="margin-top:18px">' +
+      '<button class="btn btn-block" data-act="open-rename" data-scope="item" ' +
+        'data-from="' + esc(m.name) + '">&#9998; Rename</button>' +
+      (m.removable
+        ? '<button class="btn btn-block" data-act="delete-item" data-name="' + esc(m.name) + '">' +
+          'Remove from the list</button>'
+        : m.bags
+          ? '<div class="muted small">It stays on the list while there are bags of it.</div>'
+          : '<div class="muted small">Kept: it has been stored before, so Put in will go on ' +
+            'suggesting it whatever this list says. That history is the record, and not ' +
+            'this screen\'s to edit.</div>') +
+      '<button class="btn btn-ghost btn-block" data-act="close-modal">Cancel</button>' +
+    '</div>'
+  );
+}
+
 function modalRename(m) {
   var isItem = m.scope === 'item';
   var collision = renameCollision(m);
@@ -2406,7 +2588,7 @@ function modalUnit(m) {
 
 var ACTIONS = {
   tab: function (d) {
-    setState({ tab: d.tab, modal: null });
+    setState({ tab: d.tab, modal: null, moveMode: false, moving: {} });
     // Otherwise a tap on "Put in" from halfway down 200 bags lands halfway
     // down the form, with "What are you putting in the store?" off screen.
     window.scrollTo(0, 0);
@@ -2762,13 +2944,17 @@ var ACTIONS = {
     setState({ modal: { kind: 'rename', scope: d.scope, from: d.from, value: d.from } });
   },
   'settings-open': function () {
-    // Remembered, so closing settings returns to the tab you were reading.
-    settingsCameFrom = S.tab === 'settings' ? settingsCameFrom : S.tab;
+    // Remembered, so leaving settings returns to the tab you were reading.
+    settingsCameFrom = inSettings() ? settingsCameFrom : S.tab;
     setState({ tab: 'settings', modal: null });
     window.scrollTo(0, 0);
   },
-  'settings-close': function () {
-    setState({ tab: settingsCameFrom || 'view', modal: null });
+  'go': function (d) {
+    setState({ tab: d.tab, modal: null });
+    window.scrollTo(0, 0);
+  },
+  'settings-back': function () {
+    setState({ tab: backFrom(S.tab), modal: null });
     window.scrollTo(0, 0);
   },
   'set-theme': function (d) {
@@ -2782,10 +2968,24 @@ var ACTIONS = {
     writePref('dateStyle', d.style);
     setState({});
   },
-  'toggle-editing': function () {
-    // Ticks are invisible with editing off, and acting on an invisible
+  'toggle-move-mode': function () {
+    // Ticks are invisible with the mode off, and acting on an invisible
     // selection later would be a surprise.
-    setState({ editing: !S.editing, moving: {} });
+    setState({ moveMode: !S.moveMode, moving: {} });
+  },
+  'toggle-move-item': function (d) {
+    // Built from the filtered list, which is what the row was built from.
+    // Standing at the Shed and ticking "Raspberries" means the Shed's
+    // raspberries; reading S.inventory here would take the Kitchen's too, and
+    // nobody would find out until after the move.
+    var ids = filtered()
+      .filter(function (l) { return 'i:' + l.category + ':' + l.item === d.key; })
+      .map(function (l) { return l.id; });
+    if (!ids.length) return;
+    var on = ids.every(function (id) { return S.moving[id]; });
+    var next = Object.assign({}, S.moving);
+    ids.forEach(function (id) { if (on) delete next[id]; else next[id] = true; });
+    setState({ moving: next });
   },
   'open-colour': function (d) {
     // The store dialog is itself a modal, so its half-finished edit is carried
@@ -2870,10 +3070,18 @@ var ACTIONS = {
     // The first-run screen is the add form; sending them to it with the tab
     // bar still available means it is a detour rather than a mode.
     S.newStores = [{ name: '', where: '', colour: '' }];
-    setState({ tab: 'settings-place' });
+    setState({ tab: 'settings-new-place' });
     window.scrollTo(0, 0);
   },
   'check-updates': function () { doCheckUpdates(); },
+  'open-item': function (d) {
+    var n = S.inventory.filter(function (l) { return norm(l.item) === norm(d.name); }).length;
+    var it = S.items.filter(function (i) { return norm(i.name) === norm(d.name); })[0] || {};
+    setState({ modal: {
+      kind: 'item', name: d.name, category: it.category || 'Other',
+      bags: n, removable: !n && !it.everStored,
+    } });
+  },
   'delete-item': function (d) { doDeleteItem(d.name); },
 
   // Both re-render, because the Save button's enabled state is derived from
@@ -3068,7 +3276,7 @@ function doSplit(id, into) {
  * back-navigation — reaches the DOM without firing an input event.
  */
 function doSaveStores() {
-  var cameFromSettings = S.tab === 'settings-place';
+  var cameFromSettings = S.tab === 'settings-new-place';
   var rows = firstRunDraft().map(function (row, i) {
     var name = $('#store-name-' + i);
     var where = $('#store-where-' + i);
@@ -3088,7 +3296,7 @@ function doSaveStores() {
     return load(false).then(function () {
       // Landing on Put in is the point: they came here to record something, and
       // naming the places was the obstacle, not the errand.
-      setState({ tab: cameFromSettings ? 'settings' : 'add' });
+      setState({ tab: cameFromSettings ? 'settings-places' : 'add' });
       toast(rows.length > 1 ? rows.length + ' places saved.' : rows[0].name + ' saved.');
     });
   }).catch(function (e) {
@@ -3158,7 +3366,7 @@ function doEditStore() {
 }
 
 function doDeleteItem(name) {
-  setState({ busy: true });
+  setState({ busy: true, modal: null });
   api('apiDeleteItem', { name: name }).then(function (res) {
     done();
     return load(false).then(function () {

@@ -16,8 +16,9 @@ are in [SPEC.md](SPEC.md). Three things it does:
 Tapping a bag on **In store** also offers **Change this bag**, which can put
 right its store, date, weight, count or note, or split it into several.
 
-Behind the **&#9881;** in the top right is a settings screen — see
-[Settings](#settings). Everything either tab can do is undoable.
+Behind the **&#9881;** in the top right is a menu holding everything that is
+not one of those three — see [Settings](#settings). Everything any of them
+does is undoable.
 
 ---
 
@@ -145,45 +146,49 @@ Nothing has to be deleted and re-entered. Tap a bag on **In store** and choose
   with any remainder going to the first bags. Useful once something is being
   used a portion at a time rather than all at once.
 
-**Renaming** needs **Editing** switched on under the cog. On **In store** then:
-
-- The pencil beside a category heading renames the category.
-- Expanding an item shows **Rename "…"** beneath its bags.
+**Renaming** happens where the thing is listed: an item or a category on
+**&#9881; → Items**, a place on **&#9881; → Places**. Tap it and the options
+are there.
 
 A rename reaches every bag in store *and* every row in `History`, so past
 records stay consistent with the new name. Renaming onto a name that already
 exists merges them rather than leaving two catalogue entries.
 
-All of these can be undone from the toast, same as everything else.
+**Several bags at once** — everything that came out of one drawer, say — is
+**Move** on **In store**. Tap it, tick what is going, choose where. Ticking an
+item takes every bag of it on screen, so filtering to the Shed first and then
+ticking *Raspberries* moves the Shed's and leaves the Kitchen's alone. It is
+all-or-nothing, and one Undo brings every bag back to the place it came from.
 
-Several bags at once — everything that came out of one drawer, say — is
-**Editing → tick them on In store → Move**, described below.
+All of these can be undone from the toast, same as everything else.
 
 ---
 
 ## Settings
 
-The **&#9881;** in the top right, beside the running total.
+The **&#9881;** in the top right, beside the running total. It is a menu, not
+a page: everything that is not one of the three questions lives behind it,
+where it costs those three screens nothing. Each row carries the figure you
+would have opened it to read.
+
+**Places.** Every store, with its colour and where it is. Tap one to change its
+name, its description or its colour; **Add a place** for a new one. A rename
+here reaches `Inventory` and `History` both — the thing a Find & Replace on the
+`Stores` tab does not do.
+
+**Items.** The whole catalogue, grouped by category: what **Put in** suggests
+from, and how many bags of each are in store. Tap an item to rename it or drop
+it from the list, or the pencil beside a category to rename that.
+
+An item is only removable if nothing is stored and it has never been stored.
+Anything else is marked **kept**: the type-ahead reads `History` as well as
+`Items`, so deleting the catalogue row would not stop it being suggested, and
+`History` is the record rather than this screen's to edit.
 
 **How it looks.** Light, dark, or match the tablet. Separately, whether the
 lists date a bag (*October 2025*) or age it (*11 months ago*). **Take out**
 keeps its month headings whichever you pick, and the exact day is always on the
 bag itself, behind the **›** — where it is shown both ways at once.
-
-**Editing.** Off by default, because the pencils and tick boxes are noise when
-you are only looking something up. On, it adds three things:
-
-- the rename pencils on **In store**, beside categories and under items;
-- a tick box on every bag, and a bar along the bottom to **Move** the ones you
-  tick to another place — all-or-nothing, and undoable as one action;
-- a list of items in the catalogue with nothing stored under them, to rename or
-  remove. Anything that has been stored before is marked **kept** and cannot be
-  removed: the type-ahead reads `History` as well as `Items`, so deleting the
-  catalogue row would not stop it being suggested, and `History` is the record.
-
-**Places.** Add one, or edit a name, its *where*, and its colour. Renaming here
-reaches `Inventory` and `History` both — the thing a Find & Replace on the
-`Stores` tab does not do.
 
 **This copy.** Its build date and commit, and whether a newer version has been
 published. That is the version to quote in a bug report.

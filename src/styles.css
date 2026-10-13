@@ -499,6 +499,13 @@ button, input, select, textarea {
 
 .lot.is-picked { background: var(--surface-2); }
 
+/* The item tick sits beside its row, not in it: the row is a <button>, and a
+   button cannot hold another one. The border moves out to the wrapper so the
+   pair still reads as a single line. */
+.row-pick { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+.row-pick:last-child { border-bottom: 0; }
+.row-pick .row-btn { border-bottom: 0; padding-left: 0; }
+
 /* "Choose another colour": a plus, not a colour. .swatch is on it too and
    paints var(--fz, var(--ink-3)), which with no --fz is a solid grey disc. */
 .swatch-other {
@@ -607,6 +614,27 @@ button, input, select, textarea {
 }
 
 .row-line:first-of-type { border-top: 0; }
+
+/* A flush card supplies no padding of its own, so rows inside one carry their
+   own. The rule is by adjacency rather than :first-of-type because group
+   headings are divs too, and a heading followed by a row drew both their
+   borders. */
+.card-flush .row-line { padding: 10px 16px; border-top: 0; }
+.card-flush .row-line + .row-line { border-top: 1px solid var(--line); }
+
+/* A heading is not a row, and the 68px icon button that suits a top bar makes
+   one 88px tall. Still over the 54px target, just not setting the height of
+   everything beside it. */
+.group-head .icon-btn { width: var(--tap); height: var(--tap); }
+
+/* Names the screen you have climbed down into. The brand stays put in the top
+   bar, so without this a sub-screen and the menu above it look alike. */
+.screen-title {
+  margin: 2px 0 0;
+  font-size: 1.3rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
 
 /* The gear is a way out of settings, not a call to action: a filled accent
    block beside the brand read as the most important thing on the screen. */
